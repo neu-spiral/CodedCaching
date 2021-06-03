@@ -169,6 +169,28 @@ class CacheNetwork:
         logging.debug("Creating rho flow constraints")
 
         # Decodability rate constraints
+
+        logging.debug("Creating in flows")
+
+        in_flow={}
+        for t in self.targets:
+            in_flow[t] = {}
+
+            for v in self.G.nodes():
+                in_edges = self.G.in_edges(v)
+                in_flow[t][v]={}
+
+                for i in self.catalog:
+                    in_flow[t][v][i] = xi[t][v][i] 
+                    for e in in_edges:
+                        in_flow[t][v][i] +=  rho[t][e][i]
+                    for j in self.catalog:
+                        if j>i:
+                            in_flow[t][v][(i,j)] = xi[t][v][(i,j)]
+                            for e in in_edges:
+                                in_flow[t][v][(i,j)] += rho[t][v][(i,j)]
+                        
+
         in_sum = {}
         out_sum = {}
         for v in self.G.nodes():
