@@ -42,6 +42,8 @@ class CacheNetwork:
         """Constuct cvxpy problem instance"""
         
 
+
+
         # cache variables
         logging.debug("Creating cache variables...")
         x = {}
@@ -53,19 +55,18 @@ class CacheNetwork:
                     if j>i:
                         x[v][(i,j)] = cp.Variable()
 
-        # rho flow variables
-        logging.debug("Creating rho flow variables...")
-        rho = {}
+        # xi book-keeping variables
+        logging.debug("Creating xi book-keeping variables...")
+        xi = {}
         for t in self.demand:
-            rho[t] = {}
-            for e in self.G.edges():
-                rho[t][e] = {}
+            xi[t] = {}
+            for v in self.G.nodes():
+                xi[t][v] = {}
                 for i in self.catalog:
-                    rho[t][e][i] = cp.Variable()
+                    xi[t][v][i] = cp.Variable()
                     for j in self.catalog:
                         if j>i:
-                            rho[t][e][(i,j)] = cp.Variable()
-
+                            xi[t][v][(i,j)] = cp.Variable()
 
         # z flow variables
         logging.debug("Creating z flow variables...")
@@ -77,6 +78,32 @@ class CacheNetwork:
                 for j in self.catalog:
                     if j>i:
                         z[e][(i,j)] = cp.Variable()
+
+
+        # rho book-keeping variables
+        logging.debug("Creating rho book-keeping variables...")
+        rho = {}
+        for t in self.demand:
+            rho[t] = {}
+            for e in self.G.edges():
+                rho[t][e] = {}
+                for i in self.catalog:
+                    rho[t][e][i] = cp.Variable()
+                    for j in self.catalog:
+                        if j>i:
+                            rho[t][e][(i,j)] = cp.Variable()
+
+        
+        # mu decoding capability variables
+        logging.debug("Creating mu decoding capability variables...")
+        mu = {}
+        for t in self.demand:
+            mu[t] = {}
+            for v in self.G.nodes():
+                mu[t][v] = {}
+                for i in self.catalog:
+                    mu[t][v][i] = cp.Variable()
+
 
 
         # objective
@@ -96,11 +123,16 @@ class CacheNetwork:
         # constraints
         logging.debug("Creating costraints...")
         constr = []
-        logging.debug("Creating cache variable box costraints...")
+        logging.debug("Creating cache variable non-negativity costraints...")
         for v in x:
             for ii in x[v]:
                 constr.append(x[v][ii] >= 0)
-                constr.append(x[v][ii] <= 1)
+                # constr.append(x[v][ii] <= 1) no upper bounds on x
+        logging.debug("Creating xi variable non-negativity costraints...")
+        for t in xi:
+            for v in xi[t]:
+                for ii in xi[t][v][ii]:
+                    constr.append(xi[t][v][ii] >= 0)
         logging.debug("Creating rho variable non-negativity costraints...")
         for t in rho:
             for e in rho[t]:
@@ -110,11 +142,33 @@ class CacheNetwork:
         for e in z:
             for ii in z[e][ii]:
                 constr.append(z[e][ii]>=0)
+        logging.debug("Creating mu variable non-negativity costraints...")
+        for t in mu:
+            for v in mu[t]:
+                for ii in mu[t][v][ii]:
+                    constr.append(mu[t][v][ii] >= 0)
+ 
 
 
+        # book-keeping constraints
+        logging.debug("Creating z book-keeping constraints")
+        for t in rho:
+            for e in rho[t]:
+                for ii in rho[t][e]:
+                    constr.append( rho[t][e][ii] <= z[e][ii] )
+
+        logging.debug("Creating x book-keeping constraints")
+        for t in xi:
+            for v in xi[t]:
+                for ii in xi[t][v]:
+                    constr.append( xi[t][e][ii] <= x[v][ii] )
+
+
+
+        # flow constraints
         logging.debug("Creating rho flow constraints")
 
-        # Uni-flow
+        # Decodability rate constraints
         in_sum = {}
         out_sum = {}
         for v in self.G.nodes():
@@ -178,14 +232,7 @@ class CacheNetwork:
 
                 constr.append(tot >= self.demand[t][i])
 
-        # z flow constraints
-        logging.debug("Creating z flow constraints")
-
-        for t in rho:
-            for e in rho[t]:
-                for ii in rho[t][e]:
-                    constr.append( rho[t][e][ii] <= z[e][ii] )
-
+   
         # Capacity constraints (optional)
         logging.debug("Creating cache variable capacity costraints...")
         for v in self.c:
