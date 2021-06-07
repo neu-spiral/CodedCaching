@@ -151,13 +151,13 @@ class CacheNetwork:
 
 
         # book-keeping constraints
-        logging.debug("Creating z book-keeping constraints")
+        logging.debug("Creating z book-keeping constraints...")
         for t in rho:
             for e in rho[t]:
                 for ii in rho[t][e]:
                     constr.append( rho[t][e][ii] <= z[e][ii] )
 
-        logging.debug("Creating x book-keeping constraints")
+        logging.debug("Creating x book-keeping constraints...")
         for t in xi:
             for v in xi[t]:
                 for ii in xi[t][v]:
@@ -166,19 +166,24 @@ class CacheNetwork:
 
 
         # flow constraints
-        logging.debug("Creating rho flow constraints")
+        logging.debug("Creating rho flow constraints...")
 
         # Decodability rate constraints
 
-        logging.debug("Creating in flows")
+        logging.debug("Creating in flows...")
 
-        in_flow={}
+        in_flow = {}
+        out_flow = {}
         for t in self.targets:
             in_flow[t] = {}
+            out_flow[t] = {}
 
             for v in self.G.nodes():
                 in_edges = self.G.in_edges(v)
-                in_flow[t][v]={}
+                out_edges = self.G.out_edges(v)
+
+                in_flow[t][v] = {}
+                out_flow[t][v] = {}
 
                 for i in self.catalog:
                     in_flow[t][v][i] = xi[t][v][i] 
@@ -188,73 +193,59 @@ class CacheNetwork:
                         if j>i:
                             in_flow[t][v][(i,j)] = xi[t][v][(i,j)]
                             for e in in_edges:
-                                in_flow[t][v][(i,j)] += rho[t][v][(i,j)]
-                        
+                                in_flow[t][v][(i,j)] += rho[t][e][(i,j)]
 
-        in_sum = {}
-        out_sum = {}
-        for v in self.G.nodes():
-            in_edges = self.G.in_edges(v)
-            out_edges = self.G.out_edges(v)
-            
-            in_sum[v] = {}
-            out_sum[v] = {}
-
-            for t in self.targets:
-                in_sum[v][t] = {}
-                out_sum[v][t] = {}
-
-                for i in self.catalog:
-
-                    in_sum[v][t][i] = 0
-                    for e in in_edges:
-                        in_sum[v][t][i] += rho[t][e][i]
-                    in_sum[v][t][i] += x[v][i] 
-
-                    out_sum[v][t][i] = 0
+                    out_flow[t][v][i] = 0
                     for e in out_edges:
-                        out_sum[v][t][i] += rho[t][e][i]
-
-                    constr.append( in_sum[v][t][i]  >= out_sum[v][t][i])
-  
-        # Pair-flow
-        for v in self.G.nodes():
-            in_edges = self.G.in_edges(v)
-            out_edges = self.G.out_edges(v)
+                        out_flow[t][v][i] += rho[t][e][i]
              
-            for t in self.targets:
+                    for j in self.catalog:
+                        if j>i:
+                            out_flow[t][v][(i,j)] = 0
+                            for e in out_edges:
+                                out_flow[t][v][(i,j)] += rho[t][e][(i,j)]
+                            
+
+                                
+                        
+        logging.debug("Creating decodability constraints...")
+        for t in self.targets:
+            for v in self.G.nodes():
+                for i in self.catalog:
+                    dec_rate = in_flow[t][v][i]
+                    for j in self.catalog:
+                        if j<i:
+                            dec_rate += minimum( in_flow[t][v][(j,i)], mu[t][v][j] )
+                        if j>i:
+                            dec_rate += minhalf( in_flow[t][v][(i,j)], in_flow[t][v][j])
+                    constr.append( dec_rate >= mu[t][v][i] )      
+
+        # Outgoing flow is bounded by decodability
+        
+        logging.debug("Creating unitary outgoing flow constraints...")
+        for t in self.targets:
+            for v in self.G.nodes():
+                for i in self.catalog:
+                    constr.append( mu[t][v][i] >= out_flow[t][v][i])
+
+
+        logging.debug("Creating pair outgoing flow constraints...")
+        for t in self.targets:
+            for v in self.G.nodes():
                 for i in self.catalog:
                     for j in self.catalog:
                         if j>i:
-                            in_sum[v][t][(i,j)] = 0
-                            for e in in_edges:
-                                in_sum[v][t][(i,j)] += rho[t][e][(i,j)]
-                            in_sum[v][t][(i,j)] += x[v][(i,j)]
+                            constr.append( 2*minimum(mu[t][v][i],mu[t][v][j]) >= out_flow[t][v][(i,j)])
 
-                            
-                            out_sum[v][t][(i,j)] = 0
-                            for e in out_edges:
-                                out_sum[v][t][(i,j)] += rho[t][e][(i,j)]
-                            
-                            constr.append(minimum(in_sum[v][t][i], in_sum[v][t][j])+ in_sum[v][t][(i,j)] >=  out_sum[v][t][(i,j)]  )
-                        
-        # Meet target demand
+        # Demand should be met
+
+        logging.debug("Creating demand constraints...")
         for t in self.targets:
-            for  i in self.demand[t]:
-                tot = in_sum[t][t]
-                for j in self.catalog:
-                    if i==j:
-                        continue
-                    elif i<j:
-                        ii = (i,j)
-                    else:
-                        ii = (j,i)
-                    
-                    tot += minhalf(in_sum[t][t][ii],in_sum[t][t][j])
+            for i in self.catalog:
+                constr.append( mu[t][t][i] >= self.demand[t][i] )
 
-                constr.append(tot >= self.demand[t][i])
-
-   
+       
+             
         # Capacity constraints (optional)
         logging.debug("Creating cache variable capacity costraints...")
         for v in self.c:
