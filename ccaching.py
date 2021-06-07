@@ -252,7 +252,7 @@ class CacheNetwork:
             xv = 0
             for ii in x[v]:
                 xv += x[v][ii]
-            constr.append(x[v][i] <= c[v])    
+            constr.append(xv <= c[v])    
 
         self.problem = cp.Problem(cp.Minimize(obj),constr)              
         logging.debug("Problem is DCP: "+self.problem.is_dcp())
