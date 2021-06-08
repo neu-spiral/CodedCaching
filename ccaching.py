@@ -242,7 +242,7 @@ class CacheNetwork:
 
         logging.debug("Creating demand constraints...")
         for t in self.targets:
-            for i in self.targets[t]:
+            for i in self.targets[t]: #demand met should be restricted to i's in demand[t]
                 constr.append( mu[t][t][i] >= self.demand[t][i] )
 
        
