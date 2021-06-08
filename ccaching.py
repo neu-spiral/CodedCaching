@@ -38,6 +38,7 @@ class CacheNetwork:
         ''' Detect whether node t is a target for item i.'''
         return t in self.demand and i in self.demand[t]
 
+    
     def cvxInit(self):
         """Constuct cvxpy problem instance"""
         
@@ -62,7 +63,7 @@ class CacheNetwork:
             xi[t] = {}
             for v in self.G.nodes():
                 xi[t][v] = {}
-                for i in self.catalog:
+                for i in self.catalog:  #not self.demand[t], because of cross coding you may want to use traffic not demanded by t
                     xi[t][v][i] = cp.Variable()
                     for j in self.catalog:
                         if j>i:
@@ -241,7 +242,7 @@ class CacheNetwork:
 
         logging.debug("Creating demand constraints...")
         for t in self.targets:
-            for i in self.catalog:
+            for i in self.targets[t]:
                 constr.append( mu[t][t][i] >= self.demand[t][i] )
 
        
