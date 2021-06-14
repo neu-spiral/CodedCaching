@@ -18,7 +18,7 @@ def minhalf(a,b):
 class CacheNetwork:
     """ A class modeling a cache network. """
     
-    def __init__(self,G,we,wv,dem,C,c={}):
+    def __init__(self,G,we,wv,dem,cat,c={}):
         """ Instantiate a new network. Inputs are:
             - G : a networkx graph
             - we : dictionary containing edge weight/cost functions; must be constructed from cvxpy atoms
@@ -259,7 +259,7 @@ class CacheNetwork:
         logging.debug("Problem is DCP: "+self.problem.is_dcp())
 
     def solve(self):
-        logger.info("Initializing problem parameters...")
+        logging.info("Initializing problem parameters...")
         self.cvxInit()
         logging.info("Running cvxpy solver...")
         return self.problem.solve()
