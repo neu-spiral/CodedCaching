@@ -41,7 +41,7 @@ class CacheNetwork:
         return t in self.demand and i in self.demand[t]
 
     
-    def cvxInit(self):
+    def cvx_init(self):
         """Constuct cvxpy problem instance"""
         
 
@@ -268,11 +268,37 @@ class CacheNetwork:
         logging.debug("Problem is DCP: "+str(self.problem.is_dcp()))
 
     def solve(self):
-        logging.info("Initializing problem parameters...")
-        self.cvxInit()
-        logging.info("Running cvxpy solver...")
-        return self.problem.solve()
+        logging.debug("Running cvxpy solver...")
+        self.problem.solve()
     
+    def test_feasibility(self,tol=1e-5):
+        "Confirm that the solution is feasible, with tolerance tol."
+
+        x = self.vars['x']
+        xi = self.vars['xi']
+        z = self.vars['z']
+        rho = self.vars['rho']
+        mu = self.vars['mu']
+
+        logging.debug('Asserting cache variable non-negativity...')
+        for v in x:
+            for ii in x[v]:
+                assert (x[v][ii].value >= -tol), "Cache %s, item %s has negative x value: %f" % (v,ii,x[v][ii].value) 
+
+        logging.debug("Asserting xi variable non-negativity...")
+        for t in xi:
+            for v in xi[t]:
+                for ii in xi[t][v][ii]:
+                    assert(xi[t][v][ii].value >= -tol),  "Target %s cache %s item %s has negative xi value: %f" % (t,v,ii,xi[t][v][ii].value) 
+
+
+        logging.debug("Asserting rho variable non-negativity")            
+        for t in rho:
+            for e in rho[t]:
+                for ii in rho[t][e][ii]:
+                    assert(rho[t][e][ii].value >= -tol),   "Target %s edge %s item %s has negative rho value %f" % (t,e,ii,rho[t][e][ii].value) 
+                  
+                 
 
 if __name__=="__main__":
     logging.basicConfig(level=logging.DEBUG)
@@ -294,5 +320,11 @@ if __name__=="__main__":
 
 
     CN = CacheNetwork(G,we,wv,dem,catalog)
-    CN.cvxInit()
-    results = CN.solve()
+    CN.cvx_init()
+    CN.solve()
+    print("Status:",CN.problem.solution.status)
+    print("Optimal Value:",CN.problem.solution.opt_val)
+    print('solve_time',CN.problem.solution.attr['solve_time'])
+    print('num_iters:',CN.problem.solution.attr['num_iters'])
+
+    CN.test_feasibility()
