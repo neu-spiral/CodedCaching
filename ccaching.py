@@ -3,7 +3,8 @@ import cvxpy as cp
 import numpy as np
 import logging
 
-from cvxpy.atoms.elementwise.minimum import minimum 
+from cvxpy.atoms.elementwise.minimum import minimum
+from cvxpy.atoms.elementwise.square import square
 
 #questions: 
 # Do we need upper bound of 1 on any variables?
@@ -33,6 +34,7 @@ class CacheNetwork:
         self.demand = dem
         self.catalog = sorted(cat)
         self.targets = sorted(dem.keys())
+        self.c = c
    
     def is_target(self,t,i):
         ''' Detect whether node t is a target for item i.'''
@@ -44,6 +46,7 @@ class CacheNetwork:
         
 
 
+        self.vars = {} # used to access variables outside cvx program
 
         # cache variables
         logging.debug("Creating cache variables...")
@@ -55,6 +58,8 @@ class CacheNetwork:
                 for j in self.catalog:
                     if j>i:
                         x[v][(i,j)] = cp.Variable()
+
+        self.vars['x'] = x
 
         # xi book-keeping variables
         logging.debug("Creating xi book-keeping variables...")
@@ -68,7 +73,9 @@ class CacheNetwork:
                     for j in self.catalog:
                         if j>i:
                             xi[t][v][(i,j)] = cp.Variable()
-
+        
+        self.vars['xi'] = xi
+        
         # z flow variables
         logging.debug("Creating z flow variables...")
         z = {}
@@ -80,6 +87,7 @@ class CacheNetwork:
                     if j>i:
                         z[e][(i,j)] = cp.Variable()
 
+        self.vars['z'] = z
 
         # rho book-keeping variables
         logging.debug("Creating rho book-keeping variables...")
@@ -94,7 +102,8 @@ class CacheNetwork:
                         if j>i:
                             rho[t][e][(i,j)] = cp.Variable()
 
-        
+        self.vars['rho'] = rho
+
         # mu decoding capability variables
         logging.debug("Creating mu decoding capability variables...")
         mu = {}
@@ -105,7 +114,7 @@ class CacheNetwork:
                 for i in self.catalog:
                     mu[t][v][i] = cp.Variable()
 
-
+        self.vars['mu'] = mu
 
         # objective
         logging.debug("Creating objective...")
@@ -162,7 +171,7 @@ class CacheNetwork:
         for t in xi:
             for v in xi[t]:
                 for ii in xi[t][v]:
-                    constr.append( xi[t][e][ii] <= x[v][ii] )
+                    constr.append( xi[t][v][ii] <= x[v][ii] )
 
 
 
@@ -242,7 +251,7 @@ class CacheNetwork:
 
         logging.debug("Creating demand constraints...")
         for t in self.targets:
-            for i in self.targets[t]: #demand met should be restricted to i's in demand[t]
+            for i in self.demand[t]: #demand met should be restricted to i's in demand[t]
                 constr.append( mu[t][t][i] >= self.demand[t][i] )
 
        
@@ -256,10 +265,34 @@ class CacheNetwork:
             constr.append(xv <= c[v])    
 
         self.problem = cp.Problem(cp.Minimize(obj),constr)              
-        logging.debug("Problem is DCP: "+self.problem.is_dcp())
+        logging.debug("Problem is DCP: "+str(self.problem.is_dcp()))
 
     def solve(self):
         logging.info("Initializing problem parameters...")
         self.cvxInit()
         logging.info("Running cvxpy solver...")
         return self.problem.solve()
+    
+
+if __name__=="__main__":
+    logging.basicConfig(level=logging.DEBUG)
+    G = nx.DiGraph([(0, 1), (1, 2), (2, 3)])
+    we = {}
+    wv = {}
+    for e in G.edges():
+        we[e] = square
+    for v in G.nodes():
+        wv[v] = square
+
+    dem = {}
+    targets = [0,2]
+    catalog = ['a','b','c','d']
+    for t in targets:
+        dem[t] = {}
+        for i in catalog:
+            dem[t][i] = np.random.rand()
+
+
+    CN = CacheNetwork(G,we,wv,dem,catalog)
+    CN.cvxInit()
+    results = CN.solve()
