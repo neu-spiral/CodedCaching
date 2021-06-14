@@ -37,7 +37,7 @@ class CacheNetwork:
         self.c = c
    
     def is_target(self,t,i):
-        ''' Detect whether node t is a target for item i.'''
+        """Detect whether node t is a target for item i."""
         return t in self.demand and i in self.demand[t]
 
     
@@ -268,11 +268,12 @@ class CacheNetwork:
         logging.debug("Problem is DCP: "+str(self.problem.is_dcp()))
 
     def solve(self):
+        """Solve cvxpy instance"""
         logging.debug("Running cvxpy solver...")
         self.problem.solve()
     
     def test_feasibility(self,tol=1e-5):
-        "Confirm that the solution is feasible, with tolerance tol."
+        """Confirm that the solution is feasible, upto tolerance tol."""
 
         x = self.vars['x']
         xi = self.vars['xi']
