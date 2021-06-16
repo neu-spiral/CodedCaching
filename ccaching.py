@@ -141,21 +141,21 @@ class CacheNetwork:
         logging.debug("Creating xi variable non-negativity costraints...")
         for t in xi:
             for v in xi[t]:
-                for ii in xi[t][v][ii]:
+                for ii in xi[t][v]:
                     constr.append(xi[t][v][ii] >= 0)
         logging.debug("Creating rho variable non-negativity costraints...")
         for t in rho:
             for e in rho[t]:
-                for ii in rho[t][e][ii]:
+                for ii in rho[t][e]:
                     constr.append(rho[t][e][ii] >= 0)
         logging.debug("Creating z variable non-negativity costraints...")
         for e in z:
-            for ii in z[e][ii]:
+            for ii in z[e]:
                 constr.append(z[e][ii]>=0)
         logging.debug("Creating mu variable non-negativity costraints...")
         for t in mu:
             for v in mu[t]:
-                for ii in mu[t][v][ii]:
+                for ii in mu[t][v]:
                     constr.append(mu[t][v][ii] >= 0)
  
 
@@ -198,7 +198,7 @@ class CacheNetwork:
                 for i in self.catalog:
                     in_flow[t][v][i] = xi[t][v][i] 
                     for e in in_edges:
-                        in_flow[t][v][i] +=  rho[t][e][i]
+                        in_flow[t][v][i] += rho[t][e][i]
                     for j in self.catalog:
                         if j>i:
                             in_flow[t][v][(i,j)] = xi[t][v][(i,j)]
@@ -214,8 +214,9 @@ class CacheNetwork:
                             out_flow[t][v][(i,j)] = 0
                             for e in out_edges:
                                 out_flow[t][v][(i,j)] += rho[t][e][(i,j)]
-                            
 
+        self.vars['in_flow'] = in_flow
+        self.vars['out_flow'] = out_flow
                                 
                         
         logging.debug("Creating decodability constraints...")
@@ -228,7 +229,7 @@ class CacheNetwork:
                             dec_rate += minimum( in_flow[t][v][(j,i)], mu[t][v][j] )
                         if j>i:
                             dec_rate += minhalf( in_flow[t][v][(i,j)], in_flow[t][v][j])
-                    constr.append( dec_rate >= mu[t][v][i] )      
+                    constr.append( dec_rate >= mu[t][v][i] )
 
         # Outgoing flow is bounded by decodability
         
@@ -262,7 +263,7 @@ class CacheNetwork:
             xv = 0
             for ii in x[v]:
                 xv += x[v][ii]
-            constr.append(xv <= c[v])    
+            constr.append(xv <= self.c[v])
 
         self.problem = cp.Problem(cp.Minimize(obj),constr)              
         logging.debug("Problem is DCP: "+str(self.problem.is_dcp()))
@@ -279,26 +280,94 @@ class CacheNetwork:
         z = self.vars['z']
         rho = self.vars['rho']
         mu = self.vars['mu']
+        in_flow = self.vars['in_flow']
+        out_flow = self.vars['out_flow']
 
         logging.debug('Asserting cache variable non-negativity...')
         for v in x:
             for ii in x[v]:
-                assert (x[v][ii].value >= -tol), "Cache %s, item %s has negative x value: %f" % (v,ii,x[v][ii].value) 
+                assert (x[v][ii].value >= -tol), "Cache %s, item %s has negative x value: %f" % (v,ii,x[v][ii].value)
 
         logging.debug("Asserting xi variable non-negativity...")
         for t in xi:
             for v in xi[t]:
-                for ii in xi[t][v][ii]:
-                    assert(xi[t][v][ii].value >= -tol),  "Target %s cache %s item %s has negative xi value: %f" % (t,v,ii,xi[t][v][ii].value) 
-
+                for ii in xi[t][v]:
+                    assert(xi[t][v][ii].value >= -tol),  "Target %s cache %s item %s has negative xi value: %f" % (t,v,ii,xi[t][v][ii].value)
 
         logging.debug("Asserting rho variable non-negativity")            
         for t in rho:
             for e in rho[t]:
-                for ii in rho[t][e][ii]:
-                    assert(rho[t][e][ii].value >= -tol),   "Target %s edge %s item %s has negative rho value %f" % (t,e,ii,rho[t][e][ii].value) 
-                  
-                 
+                for ii in rho[t][e]:
+                    assert(rho[t][e][ii].value >= -tol), "Target %s edge %s item %s has negative rho value %f" % (t,e,ii,rho[t][e][ii].value)
+
+        logging.debug('Asserting flow variable non-negativity...')
+        for e in z:
+            for ii in z[e]:
+                assert (z[e][ii].value >= -tol), "Edge %s, item %s has negative z value: %f" % (e,ii,z[v][ii].value)
+
+        logging.debug("Asserting mu variable non-negativity")
+        for t in mu:
+            for v in mu[t]:
+                for ii in mu[t][v]:
+                    assert(mu[t][v][ii].value >= -tol), "Target %s cache %s item %s has negative mu value %f" % (t, v, ii, mu[t][v][ii].value)
+
+        logging.debug("Asserting z book-keeping constraints...")
+        for t in rho:
+            for e in rho[t]:
+                for ii in rho[t][e]:
+                    assert( z[e][ii].value-rho[t][e][ii].value >= -tol ), "Target %s edge %s item %s not satisfy z book-keeping with %f" % (t, e, ii, z[e][ii].value-rho[t][e][ii].value)
+
+        logging.debug("Asserting x book-keeping constraints...")
+        for t in xi:
+            for v in xi[t]:
+                for ii in xi[t][v]:
+                    assert( x[v][ii].value - xi[t][v][ii].value >= -tol ), "Target %s cache %s item %s not satisfy z book-keeping with %f" % (t, v, ii, z[e][ii].value-rho[t][e][ii].value)
+
+        logging.debug("Asserting decodability constraints...")
+        for t in self.targets:
+            for v in self.G.nodes():
+                for i in self.catalog:
+                    dec_rate = in_flow[t][v][i]
+                    for j in self.catalog:
+                        if j < i:
+                            dec_rate += minimum(in_flow[t][v][(j, i)], mu[t][v][j])
+                        if j > i:
+                            dec_rate += minhalf(in_flow[t][v][(i, j)], in_flow[t][v][j])
+                    assert( dec_rate.value - mu[t][v][i].value >= -tol), "Target %s cache %s item %s not satisfy decodability constraints with %f" % (t, v, i, dec_rate - mu[t][v][i].value)
+
+        logging.debug("Asserting unitary outgoing flow constraints...")
+        for t in self.targets:
+            for v in self.G.nodes():
+                for i in self.catalog:
+                    if type(out_flow[t][v][i]) is int: # there is no out edges
+                        assert(mu[t][v][i].value >= -tol ), "Target %s cache %s item %s not satisfy unitary outgoing flow constraints with %f" % (t, v, i, mu[t][v][i].value)
+                    else:
+                        assert(mu[t][v][i].value - out_flow[t][v][i].value >= -tol ), "Target %s cache %s item %s not satisfy unitary outgoing flow constraints with %f" % (t, v, i, mu[t][v][i].value - out_flow[t][v][i].value)
+
+        logging.debug("Asserting pair outgoing flow constraints...")
+        for t in self.targets:
+            for v in self.G.nodes():
+                for i in self.catalog:
+                    for j in self.catalog:
+                        if j > i:
+                            if type(out_flow[t][v][(i, j)]) is int: # there is no out edges
+                                assert( 2 * minimum(mu[t][v][i], mu[t][v][j]).value >= -tol ), "Target %s cache %s item (%s, %s) not satisfy pair outgoing flow constraints with %f" % (t, v, i, j, 2 * minimum(mu[t][v][i], mu[t][v][j]).value )
+                            else:
+                                assert( 2 * minimum(mu[t][v][i], mu[t][v][j]).value - out_flow[t][v][(i, j)].value >= -tol ), "Target %s cache %s item (%s, %s) not satisfy pair outgoing flow constraints with %f" % (t, v, i, j, 2 * minimum(mu[t][v][i], mu[t][v][j]).value - out_flow[t][v][(i, j)].value)
+
+        logging.debug("Asserting demand constraints...")
+        for t in self.targets:
+            for i in self.demand[t]:  # demand met should be restricted to i's in demand[t]
+                assert( mu[t][t][i].value - self.demand[t][i] >= -tol), "Target %s cache %s item %s not satisfy decodability constraints with %f" % (t, t, i, mu[t][t][i].value - self.demand[t][i].value )
+
+        logging.debug("Asserting cache variable capacity costraints...")
+        for v in self.c:
+            xv = 0
+            for ii in x[v]:
+                xv += x[v][ii]
+            assert( self.c[v]- xv.value >= -tol), "Cache %s not satisfy cache variable capacity costraints with %f" % (v, self.c[v]- xv )
+
+
 
 if __name__=="__main__":
     logging.basicConfig(level=logging.DEBUG)
@@ -327,4 +396,4 @@ if __name__=="__main__":
     print('solve_time',CN.problem.solution.attr['solve_time'])
     print('num_iters:',CN.problem.solution.attr['num_iters'])
 
-    CN.test_feasibility()
+    CN.test_feasibility(1e-2)
