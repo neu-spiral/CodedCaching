@@ -1,7 +1,7 @@
 import networkx as nx
 import cvxpy as cp
 import numpy as np
-import logging
+import logging, argparse
 
 from cvxpy.atoms.elementwise.minimum import minimum
 from cvxpy.atoms.elementwise.square import square
@@ -19,7 +19,7 @@ def minhalf(a,b):
 class CacheNetwork:
     """ A class modeling a cache network. """
     
-    def __init__(self,G,we,wv,dem,cat,c={}):
+    def __init__(self,G,we,wv,dem,cat,hyperE,c={}):
         """ Instantiate a new network. Inputs are:
             - G : a networkx graph
             - we : dictionary containing edge weight/cost functions; must be constructed from cvxpy atoms
@@ -35,6 +35,7 @@ class CacheNetwork:
         self.catalog = sorted(cat)
         self.targets = sorted(dem.keys())
         self.c = c
+        self.hyperE = hyperE
    
     def is_target(self,t,i):
         """Detect whether node t is a target for item i."""
@@ -133,32 +134,37 @@ class CacheNetwork:
         # constraints
         logging.debug("Creating costraints...")
         constr = []
-        logging.debug("Creating cache variable non-negativity costraints...")
+        logging.debug("Creating cache variable non-negativity constraints...")
         for v in x:
             for ii in x[v]:
                 constr.append(x[v][ii] >= 0)
                 # constr.append(x[v][ii] <= 1) no upper bounds on x
-        logging.debug("Creating xi variable non-negativity costraints...")
+        logging.debug("Creating xi variable non-negativity constraints...")
         for t in xi:
             for v in xi[t]:
                 for ii in xi[t][v]:
                     constr.append(xi[t][v][ii] >= 0)
-        logging.debug("Creating rho variable non-negativity costraints...")
+        logging.debug("Creating rho variable non-negativity constraints...")
         for t in rho:
             for e in rho[t]:
                 for ii in rho[t][e]:
                     constr.append(rho[t][e][ii] >= 0)
-        logging.debug("Creating z variable non-negativity costraints...")
+        logging.debug("Creating z variable non-negativity constraints...")
         for e in z:
             for ii in z[e]:
                 constr.append(z[e][ii]>=0)
-        logging.debug("Creating mu variable non-negativity costraints...")
+        logging.debug("Creating mu variable non-negativity constraints...")
         for t in mu:
             for v in mu[t]:
                 for ii in mu[t][v]:
                     constr.append(mu[t][v][ii] >= 0)
  
-
+        # hyperedges for z flow
+        logging.debug("Creating hyperedges for z flow variables...")
+        for hyperedge in self.hyperE:
+            for pos in range(len(hyperedge)-1):
+                for ii in z[hyperedge[pos]]:
+                    constr.append(z[hyperedge[pos]][ii] == z[hyperedge[pos+1]][ii])
 
         # book-keeping constraints
         logging.debug("Creating z book-keeping constraints...")
@@ -258,7 +264,7 @@ class CacheNetwork:
        
              
         # Capacity constraints (optional)
-        logging.debug("Creating cache variable capacity costraints...")
+        logging.debug("Creating cache variable capacity constraints...")
         for v in self.c:
             xv = 0
             for ii in x[v]:
@@ -312,6 +318,14 @@ class CacheNetwork:
                 for ii in mu[t][v]:
                     assert(mu[t][v][ii].value >= -tol), "Target %s cache %s item %s has negative mu value %f" % (t, v, ii, mu[t][v][ii].value)
 
+        logging.debug("Asserting hyperedges for z flow variables...")
+        for hyperedge in self.hyperE:
+            for pos in range(len(hyperedge)-1):
+                for ii in z[hyperedge[pos]]:
+                    assert(abs(z[hyperedge[pos]][ii].value - z[hyperedge[pos+1]][ii].value) <= tol ), "Edge %s and edge %s item %s do not have the same z with %f and %f" % (hyperedge[pos], hyperedge[pos+1], ii, z[hyperedge[pos]][ii].value, z[hyperedge[pos+1]][ii].value)
+                    # assert(z[hyperedge[pos]][ii].value == z[hyperedge[pos+1]][ii].value ), "Edge %s and edge %s item %s do not have the same z with %f and %f" % (hyperedge[pos], hyperedge[pos+1], ii, z[hyperedge[pos]][ii].value, z[hyperedge[pos+1]][ii].value)
+
+
         logging.debug("Asserting z book-keeping constraints...")
         for t in rho:
             for e in rho[t]:
@@ -361,18 +375,53 @@ class CacheNetwork:
             for i in self.demand[t]:  # demand met should be restricted to i's in demand[t]
                 assert( mu[t][t][i].value - self.demand[t][i] >= -tol), "Target %s cache %s item %s not satisfy decodability constraints with %f" % (t, t, i, mu[t][t][i].value - self.demand[t][i].value )
 
-        logging.debug("Asserting cache variable capacity costraints...")
+        logging.debug("Asserting cache variable capacity constraints...")
         for v in self.c:
             xv = 0
             for ii in x[v]:
                 xv += x[v][ii]
             assert( self.c[v]- xv.value >= -tol), "Cache %s not satisfy cache variable capacity costraints with %f" % (v, self.c[v]- xv )
 
+def main():
+    parser = argparse.ArgumentParser(description='Simulate a Network of Coded Caches', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('--debug_level', default='INFO', type=str, help='Debug Level', choices=['INFO', 'DEBUG', 'WARNING', 'ERROR'])
+    parser.add_argument('--graph_type', type=str, help='Graph type', choices=['Maddah-Ali', 'tree'])
+    parser.add_argument('--catalog_size', default=4, type=int, help='Catalog size')
+    parser.add_argument('--random_seed', default=19930101, type=int, help='Random seed')
 
+    args = parser.parse_args()
 
-if __name__=="__main__":
-    logging.basicConfig(level=logging.DEBUG)
-    G = nx.DiGraph([(0, 1), (1, 2), (2, 3)])
+    args.debug_level = eval("logging." + args.debug_level)
+    np.random.seed(args.random_seed)
+    logging.basicConfig(level=args.debug_level)
+
+    def graphGenerator():
+        if args.graph_type == 'Maddah-Ali':
+            return nx.balanced_tree(2,1)
+        if args.graph_type == 'tree':
+            temp = nx.balanced_tree(3,2)
+            temp.add_node(-1)
+            temp.add_edge((-1,0))
+            return temp
+
+    logging.info('Generating graph...')
+
+    temp_graph = graphGenerator()
+    logging.debug('nodes: ' + str(temp_graph.nodes))  # list
+    logging.debug('edges: ' + str(temp_graph.edges))  # list of node pair
+    G = nx.DiGraph()  # generate a DiGraph
+
+    number_map = dict(zip(temp_graph.nodes(), range(len(temp_graph.nodes()))))
+    G.add_nodes_from(number_map.values())  # add node from temp_graph to G
+
+    for (x, y) in temp_graph.edges():  # add edge from temp_graph to G
+        xx = number_map[x]
+        yy = number_map[y]
+        G.add_edge(min(xx, yy), max(xx,yy))
+
+    logging.info('...done. Created graph with %d nodes and %d edges' % (G.number_of_nodes(), G.number_of_edges()))
+    logging.debug('G is:' + str(G.nodes) + str(G.edges))
+
     we = {}
     wv = {}
     for e in G.edges():
@@ -381,15 +430,27 @@ if __name__=="__main__":
         wv[v] = square
 
     dem = {}
-    targets = [0,2]
-    catalog = ['a','b','c','d']
+    targets = [1,2]
+    catalog = range(args.catalog_size)
     for t in targets:
         dem[t] = {}
         for i in catalog:
             dem[t][i] = np.random.rand()
 
-
-    CN = CacheNetwork(G,we,wv,dem,catalog)
+    def hyperedges():
+        if args.graph_type == 'Maddah-Ali':
+            return [[(0,1),(0,2)]]
+        if args.graph_type == 'tree':
+            hyperedges = []
+            hyperedge_node = [2,3,4]
+            for node_1 in hyperedge_node:
+                hyperedge = []
+                for node_2 in G.successors(node_1):
+                    hyperedge.append( (node_1,node_2))
+            hyperedges.append(hyperedge)
+            return hyperedges
+    hyperE = hyperedges()
+    CN = CacheNetwork(G,we,wv,dem,catalog,hyperE)
     CN.cvx_init()
     CN.solve()
     print("Status:",CN.problem.solution.status)
@@ -397,4 +458,36 @@ if __name__=="__main__":
     print('solve_time',CN.problem.solution.attr['solve_time'])
     print('num_iters:',CN.problem.solution.attr['num_iters'])
 
-    CN.test_feasibility(1e-2)
+    CN.test_feasibility(1e-4)
+
+
+if __name__=="__main__":
+
+    main()
+
+    # G = nx.DiGraph([(0, 1), (1, 2), (2, 3)])
+    # we = {}
+    # wv = {}
+    # for e in G.edges():
+    #     we[e] = square
+    # for v in G.nodes():
+    #     wv[v] = square
+    #
+    # dem = {}
+    # targets = [0,2]
+    # catalog = ['a','b','c','d']
+    # for t in targets:
+    #     dem[t] = {}
+    #     for i in catalog:
+    #         dem[t][i] = np.random.rand()
+    #
+    #
+    # CN = CacheNetwork(G,we,wv,dem,catalog)
+    # CN.cvx_init()
+    # CN.solve()
+    # print("Status:",CN.problem.solution.status)
+    # print("Optimal Value:",CN.problem.solution.opt_val)
+    # print('solve_time',CN.problem.solution.attr['solve_time'])
+    # print('num_iters:',CN.problem.solution.attr['num_iters'])
+    #
+    # CN.test_feasibility(1e-2)
