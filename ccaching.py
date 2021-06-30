@@ -2,9 +2,11 @@ import networkx as nx
 import cvxpy as cp
 import numpy as np
 import logging, argparse
+from collections import Counter
 
 from cvxpy.atoms.elementwise.minimum import minimum
 from cvxpy.atoms.elementwise.square import square
+from cvxpy.atoms.elementwise.power import power
 
 #questions: 
 # Do we need upper bound of 1 on any variables?
@@ -382,12 +384,24 @@ class CacheNetwork:
                 xv += x[v][ii]
             assert( self.c[v]- xv.value >= -tol), "Cache %s not satisfy cache variable capacity costraints with %f" % (v, self.c[v]- xv )
 
+    def solution(self):
+        x = self.vars['x']
+        z = self.vars['z']
+        for v in x:
+            for ii in x[v]:
+                x[v][ii] = x[v][ii].value
+        for e in z:
+            for ii in z[e]:
+                z[e][ii] = z[e][ii].value
+        return x, z
+
 def main():
     parser = argparse.ArgumentParser(description='Simulate a Network of Coded Caches', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--debug_level', default='INFO', type=str, help='Debug Level', choices=['INFO', 'DEBUG', 'WARNING', 'ERROR'])
     parser.add_argument('--graph_type', type=str, help='Graph type', choices=['Maddah-Ali', 'tree'])
     parser.add_argument('--catalog_size', default=4, type=int, help='Catalog size')
     parser.add_argument('--random_seed', default=19930101, type=int, help='Random seed')
+    parser.add_argument('--zipf_parameter', default=1.2, type=float, help='parameter of Zipf, used in demand distribution')
 
     args = parser.parse_args()
 
@@ -401,8 +415,27 @@ def main():
         if args.graph_type == 'tree':
             temp = nx.balanced_tree(3,2)
             temp.add_node(-1)
-            temp.add_edge((-1,0))
+            temp.add_edge(-1,0)
             return temp
+
+    def hyperedges():
+        if args.graph_type == 'Maddah-Ali':
+            return [[(0,1),(0,2)]]
+        if args.graph_type == 'tree':
+            hyperedges = []
+            hyperedge_node = [2,3,4]
+            for node_1 in hyperedge_node:
+                hyperedge = []
+                for node_2 in G.successors(node_1):
+                    hyperedge.append( (node_1,node_2))
+            hyperedges.append(hyperedge)
+            return hyperedges
+
+    def targetGenerator():
+        if args.graph_type == 'Maddah-Ali':
+            return [1,2]
+        if args.graph_type == 'tree':
+            return [6,7,8,9,10,11,12,13,14]
 
     logging.info('Generating graph...')
 
@@ -427,28 +460,18 @@ def main():
     for e in G.edges():
         we[e] = square
     for v in G.nodes():
-        wv[v] = square
+        wv[v] = lambda x: power(x,3)
 
     dem = {}
-    targets = [1,2]
+    targets = targetGenerator()
     catalog = range(args.catalog_size)
     for t in targets:
         dem[t] = {}
+        sample = np.random.zipf(args.zipf_parameter, 1000)
+        demend = Counter(sample)
         for i in catalog:
-            dem[t][i] = np.random.rand()
+            dem[t][i] = demend[i+1]
 
-    def hyperedges():
-        if args.graph_type == 'Maddah-Ali':
-            return [[(0,1),(0,2)]]
-        if args.graph_type == 'tree':
-            hyperedges = []
-            hyperedge_node = [2,3,4]
-            for node_1 in hyperedge_node:
-                hyperedge = []
-                for node_2 in G.successors(node_1):
-                    hyperedge.append( (node_1,node_2))
-            hyperedges.append(hyperedge)
-            return hyperedges
     hyperE = hyperedges()
     CN = CacheNetwork(G,we,wv,dem,catalog,hyperE)
     CN.cvx_init()
@@ -458,7 +481,10 @@ def main():
     print('solve_time',CN.problem.solution.attr['solve_time'])
     print('num_iters:',CN.problem.solution.attr['num_iters'])
 
-    CN.test_feasibility(1e-4)
+    CN.test_feasibility(1e-2)
+    x, z = CN.solution()
+    print(x)
+    print(z)
 
 
 if __name__=="__main__":
