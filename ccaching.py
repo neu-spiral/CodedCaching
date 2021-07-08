@@ -7,6 +7,7 @@ from collections import Counter
 from cvxpy.atoms.elementwise.minimum import minimum
 from cvxpy.atoms.elementwise.square import square
 from cvxpy.atoms.elementwise.power import power
+import matplotlib.pylab as plt
 
 #questions: 
 # Do we need upper bound of 1 on any variables?
@@ -387,20 +388,24 @@ class CacheNetwork:
     def solution(self):
         x = self.vars['x']
         z = self.vars['z']
+        mu = self.vars['mu']
         for v in x:
             for ii in x[v]:
                 x[v][ii] = x[v][ii].value
         for e in z:
             for ii in z[e]:
                 z[e][ii] = z[e][ii].value
-        return x, z
+        for t in self.targets:
+            for i in self.demand[t]:
+                mu[t][t][i] = mu[t][t][i].value
+        return x, z, mu
 
 def main():
     parser = argparse.ArgumentParser(description='Simulate a Network of Coded Caches', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--debug_level', default='INFO', type=str, help='Debug Level', choices=['INFO', 'DEBUG', 'WARNING', 'ERROR'])
     parser.add_argument('--graph_type', type=str, help='Graph type', choices=['Maddah-Ali', 'tree'])
     parser.add_argument('--catalog_size', default=4, type=int, help='Catalog size')
-    parser.add_argument('--random_seed', default=19930101, type=int, help='Random seed')
+    parser.add_argument('--random_seed', default=10, type=int, help='Random seed')
     parser.add_argument('--zipf_parameter', default=1.2, type=float, help='parameter of Zipf, used in demand distribution')
 
     args = parser.parse_args()
@@ -435,7 +440,7 @@ def main():
         if args.graph_type == 'Maddah-Ali':
             return [1,2]
         if args.graph_type == 'tree':
-            return [6,7,8,9,10,11,12,13,14]
+            return [5,6,7,8,9,10,11,12,13]
 
     logging.info('Generating graph...')
 
@@ -443,8 +448,9 @@ def main():
     logging.debug('nodes: ' + str(temp_graph.nodes))  # list
     logging.debug('edges: ' + str(temp_graph.edges))  # list of node pair
     G = nx.DiGraph()  # generate a DiGraph
-
-    number_map = dict(zip(temp_graph.nodes(), range(len(temp_graph.nodes()))))
+    temp_nodes = list(temp_graph.nodes)
+    temp_nodes.sort()
+    number_map = dict(zip(temp_nodes, range(len(temp_graph.nodes()))))
     G.add_nodes_from(number_map.values())  # add node from temp_graph to G
 
     for (x, y) in temp_graph.edges():  # add edge from temp_graph to G
@@ -454,14 +460,21 @@ def main():
 
     logging.info('...done. Created graph with %d nodes and %d edges' % (G.number_of_nodes(), G.number_of_edges()))
     logging.debug('G is:' + str(G.nodes) + str(G.edges))
-
+    # pos = nx.shell_layout(G)
+    # nx.draw_networkx(G, pos)
+    # plt.draw()
+    # plt.show()
     we = {}
     wv = {}
+    capacity = {}
     for e in G.edges():
         we[e] = square
     for v in G.nodes():
-        wv[v] = lambda x: power(x,3)
-
+        # wv[v] = lambda x: power(x,3)
+        wv[v] = square
+    for v in G.nodes():
+        capacity[v] = 2
+    capacity[0] = args.catalog_size
     dem = {}
     targets = targetGenerator()
     catalog = range(args.catalog_size)
@@ -470,7 +483,22 @@ def main():
         sample = np.random.zipf(args.zipf_parameter, 1000)
         demend = Counter(sample)
         for i in catalog:
-            dem[t][i] = demend[i+1]
+            # dem[t][i] = demend[4-i]/100
+            dem[t][i] = demend[i+1] / 100
+    print(dem)
+
+    # dem[1] = {}
+    # dem[2] = {}
+    #
+    # dem[1][0] = 0.5
+    # dem[1][1] = dem[1][0]
+    # dem[1][2] = 0.5
+    # dem[1][3] = dem[1][2]
+    #
+    # dem[2][0] = 0.5
+    # dem[2][1] = dem[2][0]
+    # dem[2][2] = 0.5
+    # dem[2][3] = dem[2][2]
 
     hyperE = hyperedges()
     CN = CacheNetwork(G,we,wv,dem,catalog,hyperE)
@@ -482,9 +510,41 @@ def main():
     print('num_iters:',CN.problem.solution.attr['num_iters'])
 
     CN.test_feasibility(1e-2)
-    x, z = CN.solution()
-    print(x)
-    print(z)
+    x, z, mu = CN.solution()
+    print(mu[5][5])
+
+    def barplot(x, f_name = ''):
+        x_ax = x.keys()
+        x_ax = [str(x) for x in x_ax]
+        y_ax = x.values()
+        # y_ax = [y for y in y_ax]
+        plt.bar(x_ax, y_ax)
+        plt.show()
+        # plt.savefig(f_name)
+
+    def barplot2(x):
+        fig, ax = plt.subplots(nrows=len(x), ncols=1)
+        fig.set_size_inches(7,18)
+        j = 0
+        for i in x:
+            title = str(i)
+            ax[j].set_title(title)
+            x_ax = [str(x) for x in x[i].keys()]
+            y_ax = x[i].values()
+            ax[j].bar(x_ax, y_ax)
+            j += 1
+        plt.tight_layout()
+        plt.show()
+
+
+    # barplot(x[0])
+    # barplot(x[1])
+    # barplot(x[2])
+    # barplot(z[(0,1)])
+    # barplot(z[(0,2)])
+    barplot2(x)
+    barplot2(z)
+
 
 
 if __name__=="__main__":
