@@ -5,32 +5,32 @@ import logging, argparse
 from collections import Counter
 
 from cvxpy.atoms.elementwise.minimum import minimum
-from cvxpy.atoms.elementwise.square import square
 from cvxpy.atoms.elementwise.power import power
 import pickle
 
-#questions: 
+
+# questions:
 # Do we need upper bound of 1 on any variables?
 # Can we incorporate capacity constraints?
 # How to x_{v(i,j)} contribute to z/capacity constraints/costs etc.?
 
-def minhalf(a,b):
+def minhalf(a, b):
     """ Return min(a,b) + 0.5*[a-b]_+ = 0.5 *(a + min(a,b)) """
-    return 0.5*(a+minimum(a,b))
+    return 0.5 * (a + minimum(a, b))
 
 
 class CacheNetwork:
     """ A class modeling a cache network. """
-    
-    def __init__(self,G,we,wv,dem,cat,hyperE,c={}):
+
+    def __init__(self, G, we, wv, dem, cat, hyperE, c={}):
         """ Instantiate a new network. Inputs are:
             - G : a networkx graph
             - we : dictionary containing edge weight/cost functions; must be constructed from cvxpy atoms
             - wv : dictionary containing node storage weight/cost functions; must be constructed from cvxpy atoms
             - dem : dictionary containing demand; d[t][i] contains demand for item i in target node t
-            - cat :  content catalog 
+            - cat :  content catalog
             - c :  dictionary containing storage capacity constraints (optional)"""
-        logging.debug("Initializing object...")    
+        logging.debug("Initializing object...")
         self.G = G
         self.we = we
         self.wv = wv
@@ -39,18 +39,15 @@ class CacheNetwork:
         self.targets = sorted(dem.keys())
         self.c = c
         self.hyperE = hyperE
-   
-    def is_target(self,t,i):
+
+    def is_target(self, t, i):
         """Detect whether node t is a target for item i."""
         return t in self.demand and i in self.demand[t]
 
-    
     def cvx_init(self):
         """Constuct cvxpy problem instance"""
-        
 
-
-        self.vars = {} # used to access variables outside cvx program
+        self.vars = {}  # used to access variables outside cvx program
 
         # cache variables
         logging.debug("Creating cache variables...")
@@ -59,9 +56,6 @@ class CacheNetwork:
             x[v] = {}
             for i in self.catalog:
                 x[v][i] = cp.Variable()
-                for j in self.catalog:
-                    if j>i:
-                        x[v][(i,j)] = cp.Variable()
 
         self.vars['x'] = x
 
@@ -72,14 +66,11 @@ class CacheNetwork:
             xi[t] = {}
             for v in self.G.nodes():
                 xi[t][v] = {}
-                for i in self.catalog:  #not self.demand[t], because of cross coding you may want to use traffic not demanded by t
+                for i in self.catalog:  # not self.demand[t], because of cross coding you may want to use traffic not demanded by t
                     xi[t][v][i] = cp.Variable()
-                    for j in self.catalog:
-                        if j>i:
-                            xi[t][v][(i,j)] = cp.Variable()
-        
+
         self.vars['xi'] = xi
-        
+
         # z flow variables
         logging.debug("Creating z flow variables...")
         z = {}
@@ -87,9 +78,6 @@ class CacheNetwork:
             z[e] = {}
             for i in self.catalog:
                 z[e][i] = cp.Variable()
-                for j in self.catalog:
-                    if j>i:
-                        z[e][(i,j)] = cp.Variable()
 
         self.vars['z'] = z
 
@@ -102,9 +90,6 @@ class CacheNetwork:
                 rho[t][e] = {}
                 for i in self.catalog:
                     rho[t][e][i] = cp.Variable()
-                    for j in self.catalog:
-                        if j>i:
-                            rho[t][e][(i,j)] = cp.Variable()
 
         self.vars['rho'] = rho
 
@@ -132,9 +117,9 @@ class CacheNetwork:
             xv = 0
             for ii in x[v]:
                 xv += x[v][ii]
-            obj += self.wv[v](xv) 
+            obj += self.wv[v](xv)
 
-        # constraints
+            # constraints
         logging.debug("Creating costraints...")
         constr = []
         logging.debug("Creating cache variable non-negativity constraints...")
@@ -155,34 +140,32 @@ class CacheNetwork:
         logging.debug("Creating z variable non-negativity constraints...")
         for e in z:
             for ii in z[e]:
-                constr.append(z[e][ii]>=0)
+                constr.append(z[e][ii] >= 0)
         logging.debug("Creating mu variable non-negativity constraints...")
         for t in mu:
             for v in mu[t]:
                 for ii in mu[t][v]:
                     constr.append(mu[t][v][ii] >= 0)
- 
+
         # hyperedges for z flow
         logging.debug("Creating hyperedges for z flow variables...")
         for hyperedge in self.hyperE:
-            for pos in range(len(hyperedge)-1):
+            for pos in range(len(hyperedge) - 1):
                 for ii in z[hyperedge[pos]]:
-                    constr.append(z[hyperedge[pos]][ii] == z[hyperedge[pos+1]][ii])
+                    constr.append(z[hyperedge[pos]][ii] == z[hyperedge[pos + 1]][ii])
 
         # book-keeping constraints
         logging.debug("Creating z book-keeping constraints...")
         for t in rho:
             for e in rho[t]:
                 for ii in rho[t][e]:
-                    constr.append( rho[t][e][ii] <= z[e][ii] )
+                    constr.append(rho[t][e][ii] <= z[e][ii])
 
         logging.debug("Creating x book-keeping constraints...")
         for t in xi:
             for v in xi[t]:
                 for ii in xi[t][v]:
-                    constr.append( xi[t][v][ii] <= x[v][ii] )
-
-
+                    constr.append(xi[t][v][ii] <= x[v][ii])
 
         # flow constraints
         logging.debug("Creating rho flow constraints...")
@@ -205,67 +188,41 @@ class CacheNetwork:
                 out_flow[t][v] = {}
 
                 for i in self.catalog:
-                    in_flow[t][v][i] = xi[t][v][i] 
+                    in_flow[t][v][i] = xi[t][v][i]
                     for e in in_edges:
                         in_flow[t][v][i] += rho[t][e][i]
-                    for j in self.catalog:
-                        if j>i:
-                            in_flow[t][v][(i,j)] = xi[t][v][(i,j)]
-                            for e in in_edges:
-                                in_flow[t][v][(i,j)] += rho[t][e][(i,j)]
 
                     out_flow[t][v][i] = 0
                     for e in out_edges:
                         out_flow[t][v][i] += rho[t][e][i]
-             
-                    for j in self.catalog:
-                        if j>i:
-                            out_flow[t][v][(i,j)] = 0
-                            for e in out_edges:
-                                out_flow[t][v][(i,j)] += rho[t][e][(i,j)]
+
 
         self.vars['in_flow'] = in_flow
         self.vars['out_flow'] = out_flow
-                                
-                        
+
         logging.debug("Creating decodability constraints...")
         for t in self.targets:
             for v in self.G.nodes():
                 for i in self.catalog:
                     dec_rate = in_flow[t][v][i]
-                    for j in self.catalog:
-                        if j<i:
-                            dec_rate += minimum( in_flow[t][v][(j,i)], mu[t][v][j] )
-                        if j>i:
-                            dec_rate += minhalf( in_flow[t][v][(i,j)], in_flow[t][v][j])
-                    constr.append( dec_rate >= mu[t][v][i] )
+                    constr.append(dec_rate >= mu[t][v][i])
 
         # Outgoing flow is bounded by decodability
-        
+
         logging.debug("Creating unitary outgoing flow constraints...")
         for t in self.targets:
             for v in self.G.nodes():
                 for i in self.catalog:
-                    constr.append( mu[t][v][i] >= out_flow[t][v][i])
+                    constr.append(mu[t][v][i] >= out_flow[t][v][i])
 
-
-        logging.debug("Creating pair outgoing flow constraints...")
-        for t in self.targets:
-            for v in self.G.nodes():
-                for i in self.catalog:
-                    for j in self.catalog:
-                        if j>i:
-                            constr.append( 2*minimum(mu[t][v][i],mu[t][v][j]) >= out_flow[t][v][(i,j)])
 
         # Demand should be met
 
         logging.debug("Creating demand constraints...")
         for t in self.targets:
-            for i in self.demand[t]: #demand met should be restricted to i's in demand[t]
-                constr.append( mu[t][t][i] >= self.demand[t][i] )
+            for i in self.demand[t]:  # demand met should be restricted to i's in demand[t]
+                constr.append(mu[t][t][i] >= self.demand[t][i])
 
-       
-             
         # Capacity constraints (optional)
         logging.debug("Creating cache variable capacity constraints...")
         for v in self.c:
@@ -274,15 +231,15 @@ class CacheNetwork:
                 xv += x[v][ii]
             constr.append(xv <= self.c[v])
 
-        self.problem = cp.Problem(cp.Minimize(obj),constr)              
-        logging.debug("Problem is DCP: "+str(self.problem.is_dcp()))
+        self.problem = cp.Problem(cp.Minimize(obj), constr)
+        logging.debug("Problem is DCP: " + str(self.problem.is_dcp()))
 
     def solve(self):
         """Solve cvxpy instance"""
         logging.debug("Running cvxpy solver...")
         self.problem.solve()
-    
-    def test_feasibility(self,tol=1e-5):
+
+    def test_feasibility(self, tol=1e-5):
         """Confirm that the solution is feasible, upto tolerance tol."""
 
         x = self.vars['x']
@@ -296,94 +253,96 @@ class CacheNetwork:
         logging.debug('Asserting cache variable non-negativity...')
         for v in x:
             for ii in x[v]:
-                assert (x[v][ii].value >= -tol), "Cache %s, item %s has negative x value: %f" % (v,ii,x[v][ii].value)
+                assert (x[v][ii].value >= -tol), "Cache %s, item %s has negative x value: %f" % (v, ii, x[v][ii].value)
 
         logging.debug("Asserting xi variable non-negativity...")
         for t in xi:
             for v in xi[t]:
                 for ii in xi[t][v]:
-                    assert(xi[t][v][ii].value >= -tol),  "Target %s cache %s item %s has negative xi value: %f" % (t,v,ii,xi[t][v][ii].value)
+                    assert (xi[t][v][ii].value >= -tol), "Target %s cache %s item %s has negative xi value: %f" % (
+                    t, v, ii, xi[t][v][ii].value)
 
-        logging.debug("Asserting rho variable non-negativity")            
+        logging.debug("Asserting rho variable non-negativity")
         for t in rho:
             for e in rho[t]:
                 for ii in rho[t][e]:
-                    assert(rho[t][e][ii].value >= -tol), "Target %s edge %s item %s has negative rho value %f" % (t,e,ii,rho[t][e][ii].value)
+                    assert (rho[t][e][ii].value >= -tol), "Target %s edge %s item %s has negative rho value %f" % (
+                    t, e, ii, rho[t][e][ii].value)
 
         logging.debug('Asserting flow variable non-negativity...')
         for e in z:
             for ii in z[e]:
-                assert (z[e][ii].value >= -tol), "Edge %s, item %s has negative z value: %f" % (e,ii,z[v][ii].value)
+                assert (z[e][ii].value >= -tol), "Edge %s, item %s has negative z value: %f" % (e, ii, z[v][ii].value)
 
         logging.debug("Asserting mu variable non-negativity")
         for t in mu:
             for v in mu[t]:
                 for ii in mu[t][v]:
-                    assert(mu[t][v][ii].value >= -tol), "Target %s cache %s item %s has negative mu value %f" % (t, v, ii, mu[t][v][ii].value)
+                    assert (mu[t][v][ii].value >= -tol), "Target %s cache %s item %s has negative mu value %f" % (
+                    t, v, ii, mu[t][v][ii].value)
 
         logging.debug("Asserting hyperedges for z flow variables...")
         for hyperedge in self.hyperE:
-            for pos in range(len(hyperedge)-1):
+            for pos in range(len(hyperedge) - 1):
                 for ii in z[hyperedge[pos]]:
-                    assert(abs(z[hyperedge[pos]][ii].value - z[hyperedge[pos+1]][ii].value) <= tol ), "Edge %s and edge %s item %s do not have the same z with %f and %f" % (hyperedge[pos], hyperedge[pos+1], ii, z[hyperedge[pos]][ii].value, z[hyperedge[pos+1]][ii].value)
+                    assert (abs(z[hyperedge[pos]][ii].value - z[hyperedge[pos + 1]][
+                        ii].value) <= tol), "Edge %s and edge %s item %s do not have the same z with %f and %f" % (
+                    hyperedge[pos], hyperedge[pos + 1], ii, z[hyperedge[pos]][ii].value,
+                    z[hyperedge[pos + 1]][ii].value)
                     # assert(z[hyperedge[pos]][ii].value == z[hyperedge[pos+1]][ii].value ), "Edge %s and edge %s item %s do not have the same z with %f and %f" % (hyperedge[pos], hyperedge[pos+1], ii, z[hyperedge[pos]][ii].value, z[hyperedge[pos+1]][ii].value)
-
 
         logging.debug("Asserting z book-keeping constraints...")
         for t in rho:
             for e in rho[t]:
                 for ii in rho[t][e]:
-                    assert( z[e][ii].value-rho[t][e][ii].value >= -tol ), "Target %s edge %s item %s not satisfy z book-keeping with %f" % (t, e, ii, z[e][ii].value-rho[t][e][ii].value)
+                    assert (z[e][ii].value - rho[t][e][
+                        ii].value >= -tol), "Target %s edge %s item %s not satisfy z book-keeping with %f" % (
+                    t, e, ii, z[e][ii].value - rho[t][e][ii].value)
 
         logging.debug("Asserting x book-keeping constraints...")
         for t in xi:
             for v in xi[t]:
                 for ii in xi[t][v]:
-                    assert( x[v][ii].value - xi[t][v][ii].value >= -tol ), "Target %s cache %s item %s not satisfy z book-keeping with %f" % (t, v, ii, z[e][ii].value-rho[t][e][ii].value)
+                    assert (x[v][ii].value - xi[t][v][
+                        ii].value >= -tol), "Target %s cache %s item %s not satisfy z book-keeping with %f" % (
+                    t, v, ii, z[e][ii].value - rho[t][e][ii].value)
 
         logging.debug("Asserting decodability constraints...")
         for t in self.targets:
             for v in self.G.nodes():
                 for i in self.catalog:
                     dec_rate = in_flow[t][v][i]
-                    for j in self.catalog:
-                        if j < i:
-                            dec_rate += minimum(in_flow[t][v][(j, i)], mu[t][v][j])
-                        if j > i:
-                            dec_rate += minhalf(in_flow[t][v][(i, j)], in_flow[t][v][j])
-                    assert( dec_rate.value - mu[t][v][i].value >= -tol), "Target %s cache %s item %s not satisfy decodability constraints with %f" % (t, v, i, dec_rate - mu[t][v][i].value)
+                    assert (dec_rate.value - mu[t][v][
+                        i].value >= -tol), "Target %s cache %s item %s not satisfy decodability constraints with %f" % (
+                    t, v, i, dec_rate - mu[t][v][i].value)
 
         logging.debug("Asserting unitary outgoing flow constraints...")
         for t in self.targets:
             for v in self.G.nodes():
                 for i in self.catalog:
-                    if type(out_flow[t][v][i]) is int: # there is no out edges
-                        assert(mu[t][v][i].value >= -tol ), "Target %s cache %s item %s not satisfy unitary outgoing flow constraints with %f" % (t, v, i, mu[t][v][i].value)
+                    if type(out_flow[t][v][i]) is int:  # there is no out edges
+                        assert (mu[t][v][
+                                    i].value >= -tol), "Target %s cache %s item %s not satisfy unitary outgoing flow constraints with %f" % (
+                        t, v, i, mu[t][v][i].value)
                     else:
-                        assert(mu[t][v][i].value - out_flow[t][v][i].value >= -tol ), "Target %s cache %s item %s not satisfy unitary outgoing flow constraints with %f" % (t, v, i, mu[t][v][i].value - out_flow[t][v][i].value)
-
-        logging.debug("Asserting pair outgoing flow constraints...")
-        for t in self.targets:
-            for v in self.G.nodes():
-                for i in self.catalog:
-                    for j in self.catalog:
-                        if j > i:
-                            if type(out_flow[t][v][(i, j)]) is int: # there is no out edges
-                                assert( 2 * minimum(mu[t][v][i], mu[t][v][j]).value >= -tol ), "Target %s cache %s item (%s, %s) not satisfy pair outgoing flow constraints with %f" % (t, v, i, j, 2 * minimum(mu[t][v][i], mu[t][v][j]).value )
-                            else:
-                                assert( 2 * minimum(mu[t][v][i], mu[t][v][j]).value - out_flow[t][v][(i, j)].value >= -tol ), "Target %s cache %s item (%s, %s) not satisfy pair outgoing flow constraints with %f" % (t, v, i, j, 2 * minimum(mu[t][v][i], mu[t][v][j]).value - out_flow[t][v][(i, j)].value)
+                        assert (mu[t][v][i].value - out_flow[t][v][
+                            i].value >= -tol), "Target %s cache %s item %s not satisfy unitary outgoing flow constraints with %f" % (
+                        t, v, i, mu[t][v][i].value - out_flow[t][v][i].value)
 
         logging.debug("Asserting demand constraints...")
         for t in self.targets:
             for i in self.demand[t]:  # demand met should be restricted to i's in demand[t]
-                assert( mu[t][t][i].value - self.demand[t][i] >= -tol), "Target %s cache %s item %s not satisfy decodability constraints with %f" % (t, t, i, mu[t][t][i].value - self.demand[t][i].value )
+                assert (mu[t][t][i].value - self.demand[t][
+                    i] >= -tol), "Target %s cache %s item %s not satisfy decodability constraints with %f" % (
+                t, t, i, mu[t][t][i].value - self.demand[t][i].value)
 
         logging.debug("Asserting cache variable capacity constraints...")
         for v in self.c:
             xv = 0
             for ii in x[v]:
                 xv += x[v][ii]
-            assert( self.c[v]- xv.value >= -tol), "Cache %s not satisfy cache variable capacity costraints with %f" % (v, self.c[v]- xv )
+            assert (self.c[v] - xv.value >= -tol), "Cache %s not satisfy cache variable capacity costraints with %f" % (
+            v, self.c[v] - xv)
 
     def solution(self):
         x = self.vars['x']
@@ -413,15 +372,18 @@ class CacheNetwork:
             objV += self.wv[v](xv).value
         return x, z, mu, objE, objV
 
+
 def main():
-    parser = argparse.ArgumentParser(description='Simulate a Network of Coded Caches', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser = argparse.ArgumentParser(description='Simulate a Network of Coded Caches',
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('outputfile', help='Output file')
-    parser.add_argument('--debug_level', default='INFO', type=str, help='Debug Level', choices=['INFO', 'DEBUG', 'WARNING', 'ERROR'])
+    parser.add_argument('--debug_level', default='INFO', type=str, help='Debug Level',
+                        choices=['INFO', 'DEBUG', 'WARNING', 'ERROR'])
     parser.add_argument('--graph_type', type=str, help='Graph type', choices=['Maddah-Ali', 'tree'])
     parser.add_argument('--catalog_size', default=4, type=int, help='Catalog size')
     parser.add_argument('--random_seed', default=10, type=int, help='Random seed')
-    parser.add_argument('--zipf_parameter', default=1.2, type=float, help='parameter of Zipf, used in demand distribution')
-
+    parser.add_argument('--zipf_parameter', default=1.2, type=float,
+                        help='parameter of Zipf, used in demand distribution')
 
     args = parser.parse_args()
 
@@ -431,31 +393,31 @@ def main():
 
     def graphGenerator():
         if args.graph_type == 'Maddah-Ali':
-            return nx.balanced_tree(2,1)
+            return nx.balanced_tree(2, 1)
         if args.graph_type == 'tree':
-            temp = nx.balanced_tree(3,2)
+            temp = nx.balanced_tree(3, 2)
             temp.add_node(-1)
-            temp.add_edge(-1,0)
+            temp.add_edge(-1, 0)
             return temp
 
     def hyperedges():
         if args.graph_type == 'Maddah-Ali':
-            return [[(0,1),(0,2)]]
+            return [[(0, 1), (0, 2)]]
         if args.graph_type == 'tree':
             hyperedges = []
-            hyperedge_node = [2,3,4]
+            hyperedge_node = [2, 3, 4]
             for node_1 in hyperedge_node:
                 hyperedge = []
                 for node_2 in G.successors(node_1):
-                    hyperedge.append( (node_1,node_2))
+                    hyperedge.append((node_1, node_2))
             hyperedges.append(hyperedge)
             return hyperedges
 
     def targetGenerator():
         if args.graph_type == 'Maddah-Ali':
-            return [1,2]
+            return [1, 2]
         if args.graph_type == 'tree':
-            return [5,6,7,8,9,10,11,12,13]
+            return [5, 6, 7, 8, 9, 10, 11, 12, 13]
 
     logging.info('Generating graph...')
 
@@ -471,7 +433,7 @@ def main():
     for (x, y) in temp_graph.edges():  # add edge from temp_graph to G
         xx = number_map[x]
         yy = number_map[y]
-        G.add_edge(min(xx, yy), max(xx,yy))
+        G.add_edge(min(xx, yy), max(xx, yy))
 
     logging.info('...done. Created graph with %d nodes and %d edges' % (G.number_of_nodes(), G.number_of_edges()))
     logging.debug('G is:' + str(G.nodes) + str(G.edges))
@@ -483,58 +445,56 @@ def main():
     wv = {}
     capacity = {}
     for e in G.edges():
-        we[e] = lambda x: power(x,1)
-        # we[e] = square
+        we[e] = lambda x: power(x, 2)
     for v in G.nodes():
-        wv[v] = lambda x: power(x,1)
-        # wv[v] = square
-    for v in G.nodes():
-        capacity[v] = float(args.outputfile)
+        wv[v] = lambda x: power(x, 2)
+
+    # for v in G.nodes():
+    #     capacity[v] = float(args.outputfile)
     # capacity[0] = args.catalog_size
     dem = {}
     targets = targetGenerator()
     catalog = range(args.catalog_size)
-    for t in targets:
-        dem[t] = {}
-        sample = np.random.zipf(args.zipf_parameter, 1000)
-        demend = Counter(sample)
-        for i in catalog:
-            # dem[t][i] = demend[4-i]/100
-            dem[t][i] = demend[i+1] / 100
-    print(dem)
+    # for t in targets:
+    #     dem[t] = {}
+    #     sample = np.random.zipf(args.zipf_parameter, 1000)
+    #     demend = Counter(sample)
+    #     for i in catalog:
+    #         # dem[t][i] = demend[4-i]/100
+    #         dem[t][i] = demend[i+1] / 100
+    # print(dem)
 
-    # dem[1] = {}
-    # dem[2] = {}
-    #
-    # dem[1][0] = 0.5
-    # dem[1][1] = dem[1][0]
-    # dem[1][2] = 0.5
-    # dem[1][3] = dem[1][2]
-    #
-    # dem[2][0] = 0.5
-    # dem[2][1] = dem[2][0]
-    # dem[2][2] = 0.5
-    # dem[2][3] = dem[2][2]
+    dem[1] = {}
+    dem[2] = {}
+
+    dem[1][0] = (1+float(args.outputfile))/2
+    dem[1][1] = dem[1][0]
+    dem[1][2] = (1-float(args.outputfile))/2
+    dem[1][3] = dem[1][2]
+
+    dem[2][0] = (1-float(args.outputfile))/2
+    dem[2][1] = dem[2][0]
+    dem[2][2] = (1+float(args.outputfile))/2
+    dem[2][3] = dem[2][2]
 
     hyperE = hyperedges()
-    CN = CacheNetwork(G,we,wv,dem,catalog,hyperE, capacity)
+    CN = CacheNetwork(G, we, wv, dem, catalog, hyperE)
     CN.cvx_init()
     CN.solve()
-    print("Status:",CN.problem.solution.status)
-    print("Optimal Value:",CN.problem.solution.opt_val)
-    print('solve_time',CN.problem.solution.attr['solve_time'])
-    print('num_iters:',CN.problem.solution.attr['num_iters'])
+    print("Status:", CN.problem.solution.status)
+    print("Optimal Value:", CN.problem.solution.opt_val)
+    print('solve_time', CN.problem.solution.attr['solve_time'])
+    print('num_iters:', CN.problem.solution.attr['num_iters'])
 
     CN.test_feasibility(1e-2)
     x, z, mu, objE, objV = CN.solution()
 
     output = args.graph_type + '_' + args.outputfile
     with open(output, 'wb') as f:
-        pickle.dump([x,z,objE,objV], f)
+        pickle.dump([x, z, objE, objV], f)
 
 
-if __name__=="__main__":
-
+if __name__ == "__main__":
     main()
 
     # G = nx.DiGraph([(0, 1), (1, 2), (2, 3)])
