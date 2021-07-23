@@ -1,0 +1,31 @@
+#! /bin/bash
+
+#for capacity in 0.5 1.0 1.5 2.0 2.5
+#do
+#    sbatch ../script.sh ccaching.py $capacity --debug_level DEBUG --graph_type Maddah-Ali --capacity $capacity --difference 0.6
+#done
+
+#for capacity in 0.5 1.0 1.5 2.0 2.5
+#do
+#    sbatch ../script.sh no_cross.py $capacity --debug_level DEBUG --graph_type Maddah-Ali --capacity $capacity --difference 0.6
+#done
+
+for penalty in 1.0 1.5 2.0 2.5 3.0
+do
+    sbatch ../script.sh ccaching.py 0.5_$penalty --debug_level DEBUG --graph_type Maddah-Ali --capacity 0.5 --penalty $penalty --difference 0.0
+done
+
+#for penalty in 1.0 1.5 2.0 2.5 3.0
+#do
+#    sbatch ../script.sh no_cross.py 0.5_$penalty --debug_level DEBUG --graph_type Maddah-Ali --capacity 0.5 --penalty $penalty --difference 0.0
+#done
+
+#for difference in 0.8
+#do
+#    sbatch ../script.sh ccaching.py $difference --debug_level DEBUG --graph_type Maddah-Ali --capacity 0.8 --difference $difference
+#done
+
+#for difference in 0.0 0.2 0.4 0.6 0.8 1.0
+#do
+#    sbatch ../script.sh no_cross.py $difference --debug_level DEBUG --graph_type Maddah-Ali --capacity 0.8 --difference $difference
+#done

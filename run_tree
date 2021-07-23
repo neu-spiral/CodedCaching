@@ -1,0 +1,31 @@
+#! /bin/bash
+
+#for zipf in 1.2 1.8 2.4 3.0 3.6
+#do
+#    sbatch ../script.sh no_cross.py up_nocc_$zipf --debug_level DEBUG --graph_type tree --capacity 16.0 --penalty 1 --catalog_size 20 --zipf_parameter $zipf
+#done
+#
+#for zipf in 1.2 1.3 1.4 1.5 1.6
+#do
+#    sbatch ../script.sh ccaching.py up_ma_$zipf --debug_level DEBUG --graph_type tree --capacity 16.0 --penalty 1 --catalog_size 20 --zipf_parameter $zipf
+#done
+
+for mul in 1.0 1.2 1.4 1.6 1.8 2.0
+do
+    sbatch ../script.sh no_cross.py up_nocc_$mul --debug_level DEBUG --graph_type tree --capacity 16.0 --penalty 1 --catalog_size 20 --penalty_mul $mul
+done
+
+#for mul in  1.0 1.2 1.4 1.6 1.8 2.0
+#do
+#    sbatch ../script.sh ccaching.py up_$mul --debug_level DEBUG --graph_type tree --capacity 16.0 --penalty 1 --catalog_size 20 --penalty_mul $mul
+#done
+
+#for mul in 5.0
+#do
+#    sbatch ../script.sh no_cross.py up_nocc_$mul --debug_level DEBUG --graph_type tree --capacity 16.0 --penalty 1 --catalog_size 20 --capacity_mul $mul
+#done
+
+#for mul in 1.0 2.0 3.0 4.0 5.0
+#do
+#    sbatch ../script.sh ccaching.py up_$mul --debug_level DEBUG --graph_type tree --capacity 16.0 --penalty 1 --catalog_size 20 --capacity_mul $mul
+#done

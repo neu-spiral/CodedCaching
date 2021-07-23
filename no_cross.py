@@ -8,7 +8,6 @@ from cvxpy.atoms.elementwise.minimum import minimum
 from cvxpy.atoms.elementwise.power import power
 import pickle
 
-
 # questions:
 # Do we need upper bound of 1 on any variables?
 # Can we incorporate capacity constraints?
@@ -113,11 +112,13 @@ class CacheNetwork:
             for ii in z[e]:
                 ze += z[e][ii]
             obj += self.we[e](ze)
-        for v in self.wv:
-            xv = 0
-            for ii in x[v]:
-                xv += x[v][ii]
-            obj += self.wv[v](xv)
+        capacities = list(self.c.values())
+        if capacities[-1] == float('Inf'): # if no constraint
+            for v in self.wv:
+                xv = 0
+                for ii in x[v]:
+                    xv += x[v][ii]
+                obj += self.wv[v](xv)
 
             # constraints
         logging.debug("Creating costraints...")
@@ -384,6 +385,11 @@ def main():
     parser.add_argument('--random_seed', default=10, type=int, help='Random seed')
     parser.add_argument('--zipf_parameter', default=1.2, type=float,
                         help='parameter of Zipf, used in demand distribution')
+    parser.add_argument('--capacity', default=float('Inf'), type=float, help='capacity of each node')
+    parser.add_argument('--difference', default=0.0, type=float, help='difference of two items used in exploring')
+    parser.add_argument('--penalty', default=1.0, type=float, help='penalty of edge')
+    parser.add_argument('--penalty_mul', default=2.0, type=float, help='increase penalty')
+    parser.add_argument('--capacity_mul', default=2.0, type=float, help='decrease capacity')
 
     args = parser.parse_args()
 
@@ -444,47 +450,68 @@ def main():
     we = {}
     wv = {}
     capacity = {}
-    for e in G.edges():
-        we[e] = lambda x: power(x, 2)
+
+    # for e in G.edges():
+    #     we[e] = lambda x: power(x,args.penalty)
+
+    z_layer = [[(0, 1)], [(1, 2), (1, 3), (1, 4)],
+               [(2, 5), (2, 6), (2, 7), (3, 8), (3, 9), (3, 10), (4, 11), (4, 12), (4, 13)]]
+    pen = args.penalty
+    for layer in z_layer:
+        for e in layer:
+            we[e] = lambda x: power(x, pen)
+        pen *= args.penalty_mul
+
     for v in G.nodes():
-        wv[v] = lambda x: power(x, 2)
+        wv[v] = lambda x: power(x, 1)
+
+    x_layer = [[0], [1], [2, 3, 4], [5, 6, 7, 8, 9, 10, 11, 12, 13]]
+    cap = args.capacity
+    for layer in x_layer:
+        for v in layer:
+            capacity[v] = cap
+        cap /= args.capacity_mul
 
     # for v in G.nodes():
-    #     capacity[v] = float(args.outputfile)
-    # capacity[0] = args.catalog_size
+    #     capacity[v] = args.capacity
+
+    capacity[0] = args.catalog_size
     dem = {}
     targets = targetGenerator()
     catalog = range(args.catalog_size)
-    # for t in targets:
-    #     dem[t] = {}
-    #     sample = np.random.zipf(args.zipf_parameter, 1000)
-    #     demend = Counter(sample)
-    #     for i in catalog:
-    #         # dem[t][i] = demend[4-i]/100
-    #         dem[t][i] = demend[i+1] / 100
-    # print(dem)
+    scale = 100
+    for t in targets:
+        dem[t] = {}
+        sample = np.random.zipf(args.zipf_parameter, 1000)
+        demend = Counter(sample)
+        for i in catalog:
+            dem[t][i] = demend[args.catalog_size-i]/scale
+            # dem[t][i] = demend[i+1] / scale
 
-    dem[1] = {}
-    dem[2] = {}
+        scale -= 5
+    print(dem)
 
-    dem[1][0] = (1+float(args.outputfile))/2
-    dem[1][1] = dem[1][0]
-    dem[1][2] = (1-float(args.outputfile))/2
-    dem[1][3] = dem[1][2]
-
-    dem[2][0] = (1-float(args.outputfile))/2
-    dem[2][1] = dem[2][0]
-    dem[2][2] = (1+float(args.outputfile))/2
-    dem[2][3] = dem[2][2]
+    # dem[1] = {}
+    # dem[2] = {}
+    #
+    # dem[1][0] = (1+args.difference)/2
+    # dem[1][1] = dem[1][0]
+    # dem[1][2] = (1-args.difference)/2
+    # dem[1][3] = dem[1][2]
+    #
+    # dem[2][0] = (1-args.difference)/2
+    # dem[2][1] = dem[2][0]
+    # dem[2][2] = (1+args.difference)/2
+    # dem[2][3] = dem[2][2]
 
     hyperE = hyperedges()
-    CN = CacheNetwork(G, we, wv, dem, catalog, hyperE)
+    CN = CacheNetwork(G, we, wv, dem, catalog, hyperE, capacity)
     CN.cvx_init()
     CN.solve()
     print("Status:", CN.problem.solution.status)
     print("Optimal Value:", CN.problem.solution.opt_val)
-    print('solve_time', CN.problem.solution.attr['solve_time'])
-    print('num_iters:', CN.problem.solution.attr['num_iters'])
+    # print('solve_time', CN.problem.solution.attr['solve_time'])
+    # print('num_iters:', CN.problem.solution.attr['num_iters'])
 
     CN.test_feasibility(1e-2)
     x, z, mu, objE, objV = CN.solution()
