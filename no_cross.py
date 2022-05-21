@@ -238,7 +238,7 @@ class CacheNetwork:
     def solve(self):
         """Solve cvxpy instance"""
         logging.debug("Running cvxpy solver...")
-        self.problem.solve()
+        self.problem.solve(solver = cp.MOSEK)
 
     def test_feasibility(self, tol=1e-5):
         """Confirm that the solution is feasible, upto tolerance tol."""
@@ -451,58 +451,67 @@ def main():
     wv = {}
     capacity = {}
 
-    # for e in G.edges():
-    #     we[e] = lambda x: power(x,args.penalty)
+    if args.graph_type == 'tree':
+        z_layer = [[(0, 1)], [(1, 2), (1, 3), (1, 4)],
+                   [(2, 5), (2, 6), (2, 7), (3, 8), (3, 9), (3, 10), (4, 11), (4, 12), (4, 13)]]
+        pen = args.penalty
+        for layer in z_layer:
+            for e in layer:
+                we[e] = lambda x: power(x, pen)
+            pen *= args.penalty_mul
 
-    z_layer = [[(0, 1)], [(1, 2), (1, 3), (1, 4)],
-               [(2, 5), (2, 6), (2, 7), (3, 8), (3, 9), (3, 10), (4, 11), (4, 12), (4, 13)]]
-    pen = args.penalty
-    for layer in z_layer:
-        for e in layer:
-            we[e] = lambda x: power(x, pen)
-        pen *= args.penalty_mul
+    elif args.graph_type == 'Maddah-Ali':
+        for e in G.edges():
+            we[e] = lambda x: power(x,args.penalty)
 
     for v in G.nodes():
         wv[v] = lambda x: power(x, 1)
 
-    x_layer = [[0], [1], [2, 3, 4], [5, 6, 7, 8, 9, 10, 11, 12, 13]]
-    cap = args.capacity
-    for layer in x_layer:
-        for v in layer:
-            capacity[v] = cap
-        cap /= args.capacity_mul
+    if args.graph_type == 'tree':
+        x_layer = [[0], [1], [2,3,4], [5,6,7,8,9,10,11,12,13]]
+        cap = args.capacity
+        for layer in x_layer:
+            for v in layer:
+                capacity[v] = cap
+            cap /= args.capacity_mul
 
-    # for v in G.nodes():
-    #     capacity[v] = args.capacity
+    elif args.graph_type == 'Maddah-Ali':
+        for v in G.nodes():
+            capacity[v] = args.capacity
 
     capacity[0] = args.catalog_size
-    dem = {}
-    targets = targetGenerator()
-    catalog = range(args.catalog_size)
-    scale = 100
-    for t in targets:
-        dem[t] = {}
-        sample = np.random.zipf(args.zipf_parameter, 1000)
-        demend = Counter(sample)
-        for i in catalog:
-            dem[t][i] = demend[args.catalog_size-i]/scale
-            # dem[t][i] = demend[i+1] / scale
 
-        scale -= 5
-    print(dem)
+    if args.graph_type == 'tree':
+        dem = {}
+        targets = targetGenerator()
+        catalog = range(args.catalog_size)
+        scale = 100
+        for t in targets:
+            dem[t] = {}
+            sample = np.random.zipf(args.zipf_parameter, 1000)
+            demend = Counter(sample)
+            for i in catalog:
+                dem[t][i] = demend[args.catalog_size-i]/scale
+                # dem[t][i] = demend[i+1] / scale
 
-    # dem[1] = {}
-    # dem[2] = {}
-    #
-    # dem[1][0] = (1+args.difference)/2
-    # dem[1][1] = dem[1][0]
-    # dem[1][2] = (1-args.difference)/2
-    # dem[1][3] = dem[1][2]
-    #
-    # dem[2][0] = (1-args.difference)/2
-    # dem[2][1] = dem[2][0]
-    # dem[2][2] = (1+args.difference)/2
-    # dem[2][3] = dem[2][2]
+            if args.difference:
+                scale -= 5
+        print(dem)
+
+    elif args.graph_type == 'Maddah-Ali':
+        dem = {}
+        dem[1] = {}
+        dem[2] = {}
+
+        dem[1][0] = (1+args.difference)/2
+        dem[1][1] = dem[1][0]
+        dem[1][2] = (1-args.difference)/2
+        dem[1][3] = dem[1][2]
+
+        dem[2][0] = (1-args.difference)/2
+        dem[2][1] = dem[2][0]
+        dem[2][2] = (1+args.difference)/2
+        dem[2][3] = dem[2][2]
 
     hyperE = hyperedges()
     CN = CacheNetwork(G, we, wv, dem, catalog, hyperE, capacity)

@@ -164,7 +164,7 @@ class CacheNetwork:
                 for ii in mu[t][v]:
                     constr.append(mu[t][v][ii] >= 0)
  
-        # hyperedges for z flow
+        # ][-p0dges for z flow
         logging.debug("Creating hyperedges for z flow variables...")
         for hyperedge in self.hyperE:
             for pos in range(len(hyperedge)-1):
@@ -428,6 +428,7 @@ def main():
     parser.add_argument('--penalty', default=1.0, type=float, help='penalty of edge')
     parser.add_argument('--penalty_mul', default=2.0, type=float, help='increase penalty')
     parser.add_argument('--capacity_mul', default=2.0, type=float, help='decrease capacity')
+    parser.add_argument('--method', type=str, help='Methods to solve problem', choices=['ma', 'cc'])
 
 
 
@@ -440,7 +441,7 @@ def main():
     def graphGenerator():
         if args.graph_type == 'Maddah-Ali':
             return nx.balanced_tree(2,1)
-        if args.graph_type == 'tree':
+        elif args.graph_type == 'tree':
             temp = nx.balanced_tree(3,2)
             temp.add_node(-1)
             temp.add_edge(-1,0)
@@ -449,7 +450,7 @@ def main():
     def hyperedges():
         if args.graph_type == 'Maddah-Ali':
             return [[(0,1),(0,2)]]
-        if args.graph_type == 'tree':
+        elif args.graph_type == 'tree':
             hyperedges = []
             hyperedge_node = [2,3,4]
             for node_1 in hyperedge_node:
@@ -462,7 +463,7 @@ def main():
     def targetGenerator():
         if args.graph_type == 'Maddah-Ali':
             return [1,2]
-        if args.graph_type == 'tree':
+        elif args.graph_type == 'tree':
             return [5,6,7,8,9,10,11,12,13]
 
     logging.info('Generating graph...')
@@ -490,84 +491,100 @@ def main():
     we = {}
     wv = {}
     capacity = {}
-    for e in G.edges():
-        we[e] = lambda x: power(x,args.penalty)
 
-    # z_layer = [[(0, 1)], [(1, 2), (1, 3), (1, 4)],
-    #            [(2, 5), (2, 6), (2, 7), (3, 8), (3, 9), (3, 10), (4, 11), (4, 12), (4, 13)]]
-    # pen = args.penalty
-    # for layer in z_layer:
-    #     for e in layer:
-    #         we[e] = lambda x: power(x, pen)
-    #     pen *= args.penalty_mul
+    if args.graph_type == 'tree':
+        z_layer = [[(0, 1)], [(1, 2), (1, 3), (1, 4)],
+                   [(2, 5), (2, 6), (2, 7), (3, 8), (3, 9), (3, 10), (4, 11), (4, 12), (4, 13)]]
+        pen = args.penalty
+        for layer in z_layer:
+            for e in layer:
+                we[e] = lambda x: power(x, pen)
+            pen *= args.penalty_mul
+
+    elif args.graph_type == 'Maddah-Ali':
+        for e in G.edges():
+            we[e] = lambda x: power(x,args.penalty)
+
 
 
     for v in G.nodes():
         wv[v] = lambda x: power(x,1)
-        # wv[v] = square
-    # x_layer = [[0], [1], [2,3,4], [5,6,7,8,9,10,11,12,13]]
-    # cap = args.capacity
-    # for layer in x_layer:
-    #     for v in layer:
-    #         capacity[v] = cap
-    #     cap /= args.capacity_mul
 
-    for v in G.nodes():
-        capacity[v] = args.capacity
+    if args.graph_type == 'tree':
+        x_layer = [[0], [1], [2,3,4], [5,6,7,8,9,10,11,12,13]]
+        cap = args.capacity
+        for layer in x_layer:
+            for v in layer:
+                capacity[v] = cap
+            cap /= args.capacity_mul
+
+    elif args.graph_type == 'Maddah-Ali':
+        for v in G.nodes():
+            capacity[v] = args.capacity
 
     capacity[0] = args.catalog_size
     targets = targetGenerator()
     catalog = range(args.catalog_size)
 
-    # dem = {}
-    # scale = 100
-    # for t in targets:
-    #     dem[t] = {}
-    #     sample = np.random.zipf(args.zipf_parameter, 1000)
-    #     demend = Counter(sample)
-    #     for i in catalog:
-    #         dem[t][i] = demend[args.catalog_size - i] / scale
-    #         # dem[t][i] = demend[i+1] / scale
-    #     scale -= 5
-    # print(dem)
+    if args.graph_type == 'tree':
+        if args.method == 'cc':
+            dem = {}
+            scale = 100
+            for t in targets:
+                dem[t] = {}
+                sample = np.random.zipf(args.zipf_parameter, 1000)
+                demend = Counter(sample)
+                for i in catalog:
+                    dem[t][i] = demend[args.catalog_size - i] / scale
+                    # dem[t][i] = demend[i+1] / scale
+                if args.difference:
+                    scale -= 5
+            print(dem)
 
-    # scale=100
-    # dist = {}
-    # for i in catalog:
-    #     dist[i] = 0.0
-    # for t in targets:
-    #     sample = np.random.zipf(args.zipf_parameter, 1000)
-    #     stat = Counter(sample)
-    #     for i in catalog:
-    #         if stat[args.catalog_size-i]/scale > dist[i]:
-    #             dist[i] = stat[args.catalog_size-i]/scale
-    #         # if stat[i+1]/scale > dist[i]:
-    #         #     dist[i] = stat[i+1]/scale
-    #     scale -= 5
-    # dem = {}
-    # for t in targets:
-    #     dem[t] = dist
-    # print(dem)
+        elif args.method == 'ma':
+            '''MAN method'''
+            scale=100
+            dist = {}
+            for i in catalog:
+                dist[i] = 0.0
+            for t in targets:
+                sample = np.random.zipf(args.zipf_parameter, 1000)
+                stat = Counter(sample)
+                for i in catalog:
+                    if stat[args.catalog_size-i]/scale > dist[i]:
+                        dist[i] = stat[args.catalog_size-i]/scale
+                    # if stat[i+1]/scale > dist[i]:
+                    #     dist[i] = stat[i+1]/scale
+                if args.difference:
+                    scale -= 5
+            dem = {}
+            for t in targets:
+                dem[t] = dist
+            print(dem)
 
-    dem ={}
+    elif args.graph_type == 'Maddah-Ali':
+        if args.method == 'cc':
+            dem ={}
 
-    dem[1] = {}
-    dem[2] = {}
+            dem[1] = {}
+            dem[2] = {}
 
-    dem[1][0] = (1+args.difference)/2
-    dem[1][1] = dem[1][0]
-    dem[1][2] = (1-args.difference)/2
-    dem[1][3] = dem[1][2]
+            dem[1][0] = (1+args.difference)/2
+            dem[1][1] = dem[1][0]
+            dem[1][2] = (1-args.difference)/2
+            dem[1][3] = dem[1][2]
 
-    dem[2][0] = (1-args.difference)/2
-    dem[2][1] = dem[2][0]
-    dem[2][2] = (1+args.difference)/2
-    dem[2][3] = dem[2][2]
+            dem[2][0] = (1-args.difference)/2
+            dem[2][1] = dem[2][0]
+            dem[2][2] = (1+args.difference)/2
+            dem[2][3] = dem[2][2]
 
-    # for t in targets:
-    #     dem[t] = {}
-    #     for i in catalog:
-    #         dem[t][i] = (1+args.difference)/2
+        elif args.method == 'ma':
+            '''MAN method'''
+            for t in targets:
+                dem[t] = {}
+                for i in catalog:
+                    dem[t][i] = (1+args.difference)/2
 
     hyperE = hyperedges()
     CN = CacheNetwork(G,we,wv,dem,catalog,hyperE, capacity)
