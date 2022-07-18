@@ -505,8 +505,6 @@ def main():
         for e in G.edges():
             we[e] = lambda x: power(x,args.penalty)
 
-
-
     for v in G.nodes():
         wv[v] = lambda x: power(x,1)
 
@@ -563,9 +561,9 @@ def main():
             print(dem)
 
     elif args.graph_type == 'Maddah-Ali':
-        if args.method == 'cc':
-            dem ={}
+        dem = {}
 
+        if args.method == 'cc':
             dem[1] = {}
             dem[2] = {}
 
