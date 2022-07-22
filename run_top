@@ -1,0 +1,11 @@
+#! /bin/bash
+
+for graph in barabasi_albert watts_strogatz lollipop expander #grid_2d erdos_renyi hypercube balanced_tree small_world geant dtelekom abilene
+do
+  for method in cc ma
+  do
+    sbatch ../script.sh ccaching.py --graph_type $graph --graph_size 25 --method $method --catalog_size 20
+    sbatch ../script.sh Random.py --graph_type $graph --graph_size 25 --method $method --catalog_size 20
+  done
+  sbatch ../script.sh no_cross.py --graph_type $graph --graph_size 25 --catalog_size 20
+done
