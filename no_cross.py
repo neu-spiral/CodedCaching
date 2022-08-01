@@ -51,7 +51,7 @@ class CacheNetwork:
         return t in self.demand and i in self.demand[t]
 
     def cvx_init(self):
-        """Constuct cvxpy problem instance"""
+        """Construct cvxpy problem instance"""
 
         self.vars = {}  # used to access variables outside cvx program
 
@@ -120,15 +120,15 @@ class CacheNetwork:
                 ze += z[e][ii]
             obj += self.we[e](ze)
         capacities = list(self.c.values())
-        if capacities[-1] == float('Inf'): # if no constraint
+        if capacities[-1] == float('Inf'):  # if no constraint
             for v in self.wv:
                 xv = 0
                 for ii in x[v]:
                     xv += x[v][ii]
                 obj += self.wv[v](xv)
 
-            # constraints
-        logging.debug("Creating costraints...")
+        # constraints
+        logging.debug("Creating constraints...")
         constr = []
         logging.debug("Creating cache variable non-negativity constraints...")
         for v in x:
@@ -204,7 +204,6 @@ class CacheNetwork:
                     for e in out_edges:
                         out_flow[t][v][i] += rho[t][e][i]
 
-
         self.vars['in_flow'] = in_flow
         self.vars['out_flow'] = out_flow
 
@@ -222,7 +221,6 @@ class CacheNetwork:
             for v in self.G.nodes():
                 for i in self.catalog:
                     constr.append(mu[t][v][i] >= out_flow[t][v][i])
-
 
         # Demand should be met
 
@@ -246,7 +244,7 @@ class CacheNetwork:
     def solve(self):
         """Solve cvxpy instance"""
         logging.debug("Running cvxpy solver...")
-        self.problem.solve(solver=cp.MOSEK, verbose=True)
+        self.problem.solve(verbose=True)
 
     def test_feasibility(self, tol=1e-5):
         """Confirm that the solution is feasible, upto tolerance tol."""
@@ -510,7 +508,7 @@ def main():
         xx = number_map[x]
         yy = number_map[y]
         G.add_edge(min(xx, yy), max(xx, yy))
-        if args.graph_type != 'tree' and args.graph_type != 'tree':
+        if args.graph_type != 'tree' and args.graph_type != 'Maddah-Ali':
             G.add_edge(max(xx, yy), min(xx, yy))
     graph_size = G.number_of_nodes()
 
@@ -523,11 +521,15 @@ def main():
     we = {}
     wv = {}
 
-    if args.graph_type != 'tree' and args.graph_type != 'tree':
+    if args.graph_type != 'tree' and args.graph_type != 'Maddah-Ali':
         closeness = nx.closeness_centrality(G)
         keys, values = list(closeness.keys()), list(closeness.values())
         values = np.power(values, -1)
-        values = (values - np.min(values)) * 5 + 1  # make closeness more sparse, larger multiplier-> more sparse
+        values = (values - np.min(values)) * 3 + 1  # make more sparse, larger multiplier-> more sparse 5
+        distance = dict(zip(keys, values))
+
+        keys, values = list(closeness.keys()), list(closeness.values())
+        values = (values - np.min(values)) * 20 + 1  # make more sparse, larger multiplier-> more sparse
         closeness = dict(zip(keys, values))
 
     if args.graph_type == 'tree':
@@ -543,15 +545,15 @@ def main():
             we[e] = lambda x: power(x, args.penalty)
     else:
         for (u, v) in G.edges():
-            average_closeness = (closeness[u] + closeness[v]) / 2
-            we[(u, v)] = lambda x: power(x, average_closeness)
+            average_distance = (distance[u] + distance[v]) / 2
+            we[(u, v)] = lambda x: power(x, average_distance)
 
     if args.graph_type == 'Maddah-Ali' or args.graph_type == 'tree':
         for v in G.nodes():
             wv[v] = lambda x: power(x, 1)
     else:
         for v in G.nodes():
-            wv[v] = lambda x: power(x, closeness[v])
+            wv[v] = lambda x: power(x, distance[v])
 
     capacity = {}
 
@@ -594,7 +596,7 @@ def main():
         if args.graph_type == 'tree':
             scale = 100
         else:
-            scale = 1000 / graph_size
+            scale = 2000 / graph_size  # 1000 / graph_size
         for t in targets:
             dem[t] = {}
             sample = np.random.zipf(args.zipf_parameter, 1000)
@@ -606,7 +608,6 @@ def main():
                 scale -= 5
         print(dem)
 
-
     hyperE = hyperedges()
 
     CN = CacheNetwork(G, we, wv, dem, catalog, hyperE, capacity)
@@ -614,13 +615,12 @@ def main():
     CN.solve()
     print("Status:", CN.problem.solution.status)
     print("Optimal Value:", CN.problem.solution.opt_val)
-    # print('solve_time', CN.problem.solution.attr['solve_time'])
-    # print('num_iters:', CN.problem.solution.attr['num_iters'])
+    print('solve_time', CN.problem.solution.attr['solve_time'])
 
     CN.test_feasibility(1e-2)
     x, z, mu, objE, objV = CN.solution()
 
-    dir = 'nocc_small/'
+    dir = 'nocc_100_50/'
     if not os.path.exists(dir):
         os.mkdir(dir)
     output = dir + args.graph_type

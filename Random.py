@@ -71,7 +71,7 @@ class CacheNetwork:
         return x
 
     def cvx_init(self, x):
-        """Constuct cvxpy problem instance"""
+        """Construct cvxpy problem instance"""
 
         self.vars = {}  # used to access variables outside cvx program
 
@@ -152,7 +152,7 @@ class CacheNetwork:
                 obj += self.wv[v](xv)
 
         # constraints
-        logging.debug("Creating costraints...")
+        logging.debug("Creating constraints...")
         constr = []
 
         logging.debug("Creating xi variable non-negativity constraints...")
@@ -175,7 +175,7 @@ class CacheNetwork:
                 for ii in mu[t][v]:
                     constr.append(mu[t][v][ii] >= 0)
 
-        # ][-p0dges for z flow
+        # hyperedges for z flow
         logging.debug("Creating hyperedges for z flow variables...")
         for hyperedge in self.hyperE:
             for pos in range(len(hyperedge) - 1):
@@ -397,9 +397,6 @@ class CacheNetwork:
         x = self.vars['x']
         z = self.vars['z']
         mu = self.vars['mu']
-        for v in x:
-            for ii in x[v]:
-                x[v][ii] = x[v][ii]
         for e in z:
             for ii in z[e]:
                 z[e][ii] = z[e][ii].value
@@ -551,7 +548,7 @@ def main():
         xx = number_map[x]
         yy = number_map[y]
         G.add_edge(min(xx, yy), max(xx, yy))
-        if args.graph_type != 'tree' and args.graph_type != 'tree':
+        if args.graph_type != 'tree' and args.graph_type != 'Maddah-Ali':
             G.add_edge(max(xx, yy), min(xx, yy))
     graph_size = G.number_of_nodes()
 
@@ -564,11 +561,15 @@ def main():
     we = {}
     wv = {}
 
-    if args.graph_type != 'tree' and args.graph_type != 'tree':
+    if args.graph_type != 'tree' and args.graph_type != 'Maddah-Ali':
         closeness = nx.closeness_centrality(G)
         keys, values = list(closeness.keys()), list(closeness.values())
         values = np.power(values, -1)
-        values = (values - np.min(values)) * 5 + 1  # make closeness more sparse, larger multiplier-> more sparse (1-6)
+        values = (values - np.min(values)) * 3 + 1  # make more sparse, larger multiplier-> more sparse 5
+        distance = dict(zip(keys, values))
+
+        keys, values = list(closeness.keys()), list(closeness.values())
+        values = (values - np.min(values)) * 20 + 1  # make more sparse, larger multiplier-> more sparse
         closeness = dict(zip(keys, values))
 
     if args.graph_type == 'tree':
@@ -584,15 +585,15 @@ def main():
             we[e] = lambda x: power(x, args.penalty)
     else:
         for (u, v) in G.edges():
-            average_closeness = (closeness[u] + closeness[v]) / 2
-            we[(u, v)] = lambda x: power(x, average_closeness)
+            average_distance = (distance[u] + distance[v]) / 2
+            we[(u, v)] = lambda x: power(x, average_distance)
 
     if args.graph_type == 'Maddah-Ali' or args.graph_type == 'tree':
         for v in G.nodes():
             wv[v] = lambda x: power(x, 1)
     else:
         for v in G.nodes():
-            wv[v] = lambda x: power(x, closeness[v])
+            wv[v] = lambda x: power(x, distance[v])
 
     capacity = {}
 
@@ -643,7 +644,7 @@ def main():
             if args.graph_type == 'tree':
                 scale = 100
             else:
-                scale = 1000 / graph_size
+                scale = 2000 / graph_size  # 1000 / graph_size
             for t in targets:
                 dem[t] = {}
                 sample = np.random.zipf(args.zipf_parameter, 1000)
@@ -660,7 +661,7 @@ def main():
             if args.graph_type == 'tree':
                 scale = 100
             else:
-                scale = 1000 / graph_size
+                scale = 2000 / graph_size  # 1000 / graph_size
             dist = {}
             for i in catalog:
                 dist[i] = 0.0
@@ -691,7 +692,7 @@ def main():
     CN.test_feasibility(1e-2)
     x, z, mu, objE, objV = CN.solution()
 
-    dir = 'random_' + args.method + '_small/'
+    dir = 'random_' + args.method + '_100_50/'
     if not os.path.exists(dir):
         os.mkdir(dir)
     output = dir + args.graph_type
