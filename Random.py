@@ -356,7 +356,7 @@ class CacheNetwork:
                             dec_rate += minhalf(in_flow[t][v][(i, j)], in_flow[t][v][j])
                     assert (dec_rate.value - mu[t][v][
                         i].value >= -tol), "Target %s cache %s item %s not satisfy decodability constraints with %f" % (
-                    t, v, i, dec_rate - mu[t][v][i].value)
+                    t, v, i, dec_rate.value - mu[t][v][i].value)
 
         logging.debug("Asserting unitary outgoing flow constraints...")
         for t in self.targets:
