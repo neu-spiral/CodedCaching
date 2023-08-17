@@ -3,7 +3,9 @@
 Codes of algorithm implementations and experiments for paper:
 >D. Malak, Y. Li, S. Ioannidis, E. Yeh and M. Médard. Joint Optimization of Storage and Transmission via Coding Traffic Flows for Content Distribution. International Symposium on Modeling and Optimization in Mobile, Ad hoc, and Wireless Networks (WiOpt), 2023.
 
-Please cite this paper if you intend to use this code for your research.
+Please cite this paper if you intend to use this code for your research. 
+
+This work was supported in part by the National Science Foundation under Grants CNS 2008639 and CNS 2107062. Co-funded by the European Union (ERC, SENSIBILIT\'E, 101077361). Views and opinions expressed are however those of the authors only and do not necessarily reflect those of the European Union or the European Research Council. Neither the European Union nor the granting authority can be held responsible for them.
 
 * [Dependencies](#dependencies)
 * [Algorithms](#algorithms)
